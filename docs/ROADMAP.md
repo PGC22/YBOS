@@ -1,205 +1,116 @@
 # YBOS Roadmap
 
-> MVP target: **8-10 luni** de la start
-> Demo target: Pixel 7 boot → onboarding → conversație cu main agent → 5 agenți activi → privacy firewall demonstrabil
+> Detaliat doar pentru Y0 (în progres) și Y1 (next). Restul fazelor sunt enumerate succint, cu semne de întrebare doar acolo unde decizia afectează arhitectura/implementarea din Y1.
+>
+> **Fără estimări de timp.** Ordinea fazelor + dependențele contează; timpul real e irelevant până când produsul devine vandabil.
 
 ---
 
-## MVP Phases
+## Y0 — Bootstrap ✅ În progres
 
-### Y0 — Bootstrap (1 zi) ✅ În progres
 - Repo YBOS creat (public, github.com/PGC22/YBOS)
 - Structură directoare + docs scrise
 - l0/ portat din RemusOS3 (Cargo.toml rebrand `ybos-l0`)
 - YBOSClaude.md = source of truth context
+- Arhitectură detailed (inclusiv laptop companion + user-context memory + task offload)
 
 **Acceptance**: `git clone` + cititul `YBOSClaude.md` dă context complet oricărui Claude/dev.
 
 ---
 
-### Y1 — L0 generalizare (3-4 săpt)
-- Generalizare `identity/` din George-hardcoded la enrollment dinamic
-- Onboarding flow scaffold (Rust): wizard logic, key generation, 3-envelope crypto
-- BIP39 mnemonic generation + display
-- TEE binding plan (StrongBox API research)
-- L0 SACRED enforcement adaptat pentru Android (SELinux policy draft)
+## Y1 — L0 generalizare ⭐ NEXT
 
-**Acceptance**: `cargo test` în l0/ verde, identity enrollment cu PIN funcționează pe Linux dev, plan TEE scris.
+> Singura fază cu detaliu complet acum. Scope-ul e definit ca să livreze identity-ul generalizat + hook-uri arhitecturale pentru tot ce vine după.
 
----
+### Scope
 
-### Y2 — AOSP build environment (4-6 săpt)
-- Setup AOSP build host (Ubuntu LTS în VM/cloud, 200GB+ disk, 32GB+ RAM)
-- Sync sursa AOSP 14/15
-- Build target: Pixel 7 stock GSI mai întâi (verificare environment)
-- Apoi: minimal AOSP modifications pentru YBOS hostname/branding
-- Flash pe device test
-- ybos-l0 cross-compiled aarch64, instalat ca system service
+1. **Generalizare `l0/src/identity/` din George-hardcoded la enrollment dinamic**
+   - `Identity` struct generic (nume, UUID generated, biometric_template_public, created_at)
+   - Eliminare referințe text "George", "Remus" din log messages + identitate
+   - Layout paths nou: `${YBOS_DATA}/identity/...` în loc de paths Remus
+   - `sacred.rs` lista actualizată la layout YBOS
 
-**Acceptance**: Pixel 7 bootează în "YBOS" customizat, ybos-l0 rulează ca daemon, telemetria curge.
+2. **Onboarding flow scaffold (Rust, single-device)**
+   - State machine: Welcome → Name → PIN → Biometric (opt) → YubiKey (opt) → KeyGen → BIP39 display → Sealed
+   - Argon2id pentru envelope A (PIN + biometric_template + device_fingerprint)
+   - Stub pentru envelope B (TEE seal) — interfața + plan documentat, implementare reală în fază AOSP
+   - Stub pentru envelope C (YubiKey HMAC) — interfața + plan
+   - BIP39 mnemonic generation + display logic (afișat o singură dată, marker în `bip39.lock`)
+   - Identity blob signed HMAC cu K, scris în `identity_core.bin`
 
----
+3. **API pentru session token issuance (HOOK, NU implementare completă)**
+   - Funcție `issue_session_token(scope, expiry, peer_fingerprint) -> SessionToken`
+   - HKDF derivation din K-master cu salt aleator + epoca timpului
+   - Storage in-memory pentru lista sesiuni active (persisted dacă necesar pentru reboot recovery)
+   - API pentru `revoke_session(session_id)` + `revoke_all()`
+   - **NU implementăm QR/NFC pairing flow aici** — doar API-ul intern. Pairing-ul e o fază viitoare cu laptop companion.
 
-### Y3 — L1 orchestrator skeleton (4 săpt)
-- `ybos-orchestrator` Rust crate creat
-- Binder service definition (AIDL → Rust binding)
-- gRPC server pentru cross-Linux compat
-- Capability enforcement layer 1
-- Agent registry + manifest.toml parsing
+4. **Tripwire boot integrity (păstrat din Remus, adaptat)**
+   - Hash check pe L0 SACRED files
+   - Hash check pe lista L0_SACRED însăși (anti-tamper)
+   - Boot blocat dacă mismatch
 
-**Acceptance**: orchestrator înregistrează un "hello-world" agent, refuză cereri ne-declarate, returnează raport capabilities.
+5. **Tests + smoke**
+   - `cargo test` verde pentru identity enrollment, BIP39, HMAC, session token issuance API
+   - Smoke test pe Linux dev: rulează onboarding scaffold end-to-end fără device real, generează identity, verifică integrity la "reboot" simulat
 
----
+### Acceptance criteria Y1
 
-### Y4 — LLM inference layer (4 săpt)
-- llama.cpp + mlc-llm integration
-- Modele test: llama 3B Q4_K_M, phi-3 mini
-- NPU acceleration pe Tensor G2/G3 (mlc-llm pipeline)
-- Memory: sqlite-vss embedded
-- Streaming responses
+- [ ] `cargo build && cargo test` în l0/ verde
+- [ ] Identity enrollment cu PIN funcționează pe Linux dev (simulat fără TEE/YubiKey)
+- [ ] BIP39 mnemonic generat, afișat, marker `bip39.lock` scris
+- [ ] Session token API testabil unitar (issue + revoke)
+- [ ] Tripwire detectează modificare a oricărui L0 SACRED file
+- [ ] Zero referințe hardcoded "George" sau "Remus" în code/docs
+- [ ] Plan TEE binding documentat în `docs/ARCHITECTURE.md` §2.1 (StrongBox/Hexagon API research, fără implementare)
 
-**Acceptance**: prompt → response în <5s pe device cu modelul 3B, vector store funcțional, RAM usage <3GB.
+### Ce NU intrare în Y1
 
----
-
-### Y5 — Agent 1: Calendar (3 săpt)
-- Calendar agent scaffold (Rust)
-- Local calendar storage
-- Google Calendar OAuth + sync (cu user consent flow)
-- Tools: create/list/update/delete events
-- LLM integration: "set up meeting cu X mâine la 10" → tool calls
-
-**Acceptance**: user spune "programează ședință cu mama luni 14:00", agent creează event, sync cu Google Calendar funcțional.
-
----
-
-### Y6 — Agent 2: News Digest (2 săpt)
-- News agent scaffold
-- Whitelist surse: WSJ, Reuters, Al-Jazeera, CNN, FT, BBC, AP (configurabil per user)
-- RSS / API fetchers
-- LLM summarization per categorie
-- Morning brief notification
-
-**Acceptance**: "ce e nou azi în energie?" → 5-bullet summary cu surse.
+- Implementare TEE reală (vine în fază AOSP build când avem device real)
+- QR/NFC pairing flow (vine în fază laptop companion)
+- Multi-device identity restore (vine post-MVP)
+- L1 orchestrator integration (fază separată)
 
 ---
 
-### Y7 — Privacy firewall Layer 1: capabilities (2 săpt)
-- Enforce strict pe orchestrator
-- UI vizualizare capabilities active
-- Audit log: ce agent a accesat ce, când
-- Block + notify pe încălcare
+## Y2+ — Faze enumerate (detaliu TBD când ajungem)
 
-**Acceptance**: Calendar agent încearcă `wget google.com/something-nondeclared` → blocked + log.
+Doar headline-uri. Detaliu va fi adăugat pe măsură ce ne apropiem de fiecare fază. Semne de întrebare doar unde **chiar afectează Y1**.
 
----
-
-### Y8 — Privacy firewall Layer 2: eBPF redactor (4-6 săpt)
-- aya-rs setup pe Pixel kernel
-- BPF program: hook `connect()`, `sendmsg()` syscalls
-- PII patterns: email regex, phone E.164, locație precisă (GPS coords)
-- Redactor: strip PII din payload, log eveniment
-- Performance test: throughput >10MB/s acceptabil
-
-**Acceptance**: agent trimite "ridică-mă de la 45.123,25.456" → outbound stripped la "ridică-mă de la <LOCATION>", agent vede răspuns ok, log arată redactare.
-
----
-
-### Y9 — Privacy firewall Layer 3: LLM judge (3 săpt)
-- Sub-model "Privacy Guard" — phi-3 mini sau distillation
-- Judecă payload-uri outbound înainte de send
-- Output: allow / redact / block / ask-user
-- UI prompt user când "ask-user"
-
-**Acceptance**: agent cere cloud burst pentru market data → LLM judge analizează prompt → "OK, fără PII detectat, allow" → trimite.
+- **AOSP build environment** — setup build host, sync AOSP, flash device test (model TBD per achiziție). Afectează Y1? **NU** — Y1 rulează pe Linux dev.
+- **L1 orchestrator skeleton** — `ybos-orchestrator` crate, capability enforcement, agent registry. ❓ Hook pentru Agent Builder runtime registration: design-uim API-ul L1 în acea fază astfel încât Y1 session_token API să se integreze curat.
+- **LLM inference layer** — llama.cpp + mlc-llm pe NPU. Afectează Y1? **NU**.
+- **Agent seed: Calendar** — primul agent end-to-end demo. Afectează Y1? **NU**.
+- **Agent seed: News Digest**. **NU** afectează Y1.
+- **Privacy firewall Layer 1 (capabilities)**. **NU** afectează Y1.
+- **Privacy firewall Layer 2 (eBPF redactor)**. **NU** afectează Y1.
+- **Privacy firewall Layer 3 (LLM judge)**. **NU** afectează Y1.
+- **Agent seed: Trip Planner**. **NU** afectează Y1.
+- **Agent seed: Market Intel**. **NU** afectează Y1.
+- **Agent seed: Learning Curator**. **NU** afectează Y1.
+- **Agent Builder Framework** — template + LLM-assisted configurator + UI flow. **NU** afectează Y1 direct (afectează L1 design).
+- **User-Context Memory subsystem** — storage + sync + capability `data.user_prefs`. **NU** afectează Y1.
+- **Laptop Companion (Tauri)** — pairing QR/NFC + session crypto + task offload + cache sync. ❓ **Y1 trebuie să livreze API session token issuance** ca această fază să nu refactoreze identity-ul. Punct critic — vezi Y1 scope §3.
+- **UI native YBOS mobile** — launcher, onboarding wizard UI, agent dashboards, agent builder UI. **NU** afectează Y1.
+- **Cross-device extins** (multi-phone, tabletă) — post-MVP. **NU** afectează Y1.
+- **Cloud burst activation** — v0.2+. **NU** afectează Y1.
+- **VM Mode (Tier 1) laptop** — Linux VM minim, GPU passthrough, SEV-SNP/TDX integration. Research item, post-MVP. **NU** afectează Y1.
+- **Split inference layer-by-layer** ❓ research item (vezi ARCHITECTURE.md §4.5). Independent, când/dacă apare hardware potrivit. **NU** afectează Y1.
 
 ---
 
-### Y10 — Agent 3: Trip Planner (3 săpt)
-- Flights/hotels APIs (Amadeus / Skyscanner OAuth)
-- Itinerary planner cu LLM
-- Booking handoff (link user-driven, no auto-purchase MVP)
-- Calendar integration pentru meeting trips
-
-**Acceptance**: "vreau să zbor în Berlin săptămâna viitoare pentru 3 zile, business meeting cu X" → propunere itinerar + flight options.
-
----
-
-### Y11 — Agent 4: Market Intel (3 săpt)
-- Reusable agent template (instanțiat per piață: energie, tech, etc.)
-- Surse: company filings, market data APIs (yfinance, polygon.io)
-- Daily/weekly reports
-- Vector memory per piață
-
-**Acceptance**: "fă-mi un raport pe piața de energie europeană luna asta" → 2-3 page summary cu surse.
-
----
-
-### Y12 — Agent 5: Learning Curator (6-8 săpt)
-- Share intent: "Share to YBOS" din TikTok/IG/YouTube Shorts
-- Picker UI categorii (Programming, Teambuilding, Idei, +custom)
-- Background: download video → Whisper transcribe → LLM extract structure
-- Output: card cu pași, resurse, sumar, action items
-- UI tip ZEST: browse cards per categorie
-
-**Acceptance**: user dă share unui reel "How to deploy with Docker", alege "Programming" → card apare cu pași listed.
-
----
-
-### Y13 — UI native YBOS (4-6 săpt)
-- Launcher (replace SystemUI default)
-- Onboarding wizard UI (cu fluxul L0 din Y1)
-- Agent dashboards
-- Quick chat overlay (gesture sau button hw)
-- Settings (capability management, cloud burst toggles)
-
-**Acceptance**: Pixel 7 fresh flash → boot direct în onboarding wizard YBOS → user completează → ajunge în launcher → conversație cu main agent funcțională.
-
----
-
-### Y14 — Cross-device "simbioza" (4 săpt, post-MVP)
-- mDNS discovery
-- Cert exchange (signed cu K-derived ephemeral key)
-- CRDT calendar sync între phone + laptop
-- "Continuum" feature: încep conversația pe telefon, continui pe laptop
-
-**Acceptance**: user are YBOS pe Pixel + laptop test, fac sync, calendar e replicat.
-
----
-
-### Y15 — Cloud burst activation (2 săpt, v0.2)
-- RemoteAPI impl funcțional (Anthropic API initial)
-- Per-category toggle în UI
-- Privacy Guard verifică payload înainte
-- Cost tracking + budget alerts
-
-**Acceptance**: user activează "research = cloud OK" → market intel folosește Claude API → response calitate superioară on-device.
-
----
-
-## Post-MVP (v0.3+)
+## Post-MVP (TBD)
 
 - iOS app companion (read-only, view dashboards)
-- Linux distro twin (laptop) cu același Rust core
+- Linux distro twin (laptop) — reutilizat pentru VM Mode laptop
 - Multi-tenancy laptop (multi-user per device)
-- Plugin SDK pentru agenți third-party (cu privacy review obligatoriu)
-- Marketplace agenți
-- B2B enterprise features (audit, MDM)
+- Plugin SDK pentru agenți third-party
+- Marketplace agenți (community, sandboxed)
+- B2B enterprise features
+- Hardware research: split inference, FHE accelerator, custom secure element
 
 ---
 
-## Effort distribution (estimat)
+## Notă pe estimare
 
-| Categorie | Eff total | % din MVP |
-|---|---|---|
-| L0 + onboarding | 3-4 săpt | 8% |
-| AOSP build + device | 4-6 săpt | 12% |
-| L1 orchestrator + capabilities | 6 săpt | 13% |
-| LLM inference + memory | 4 săpt | 8% |
-| 5 agenți | 17-19 săpt | 38% |
-| Privacy firewall (3 layere) | 9-13 săpt | 22% |
-| UI native | 4-6 săpt | 12% |
-| Buffer / unknowns | 4 săpt | ~10% |
-| **TOTAL MVP** | **~42-52 săpt** | **8-10 luni** |
-
-Asumare: paralelizare prin generatoare AI cod (Codex, Jules), George ca arhitect full-time, Claude review continuu.
+Documentul a avut estimări de săptămâni/luni anterior. Au fost scoase intenționat (decizie 2026-05-21 sesiunea 2). Motiv: livrabilitate viabilă (vandabilă) depinde de calitate + acceptanță, nu de un calendar arbitrar. Adăugăm milestone-uri reale când avem semnale (alfa privată, feedback testers, etc.).

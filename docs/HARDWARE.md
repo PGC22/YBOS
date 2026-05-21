@@ -1,7 +1,13 @@
 # YBOS Target Hardware
 
-> Sesiunea decision: 2026-05-21
-> Recomandare Lead Dev: **Pixel 7 second-hand (~450€)** pentru MVP
+> Sesiunea decision: 2026-05-21 (clarificare sesiunea 2: device-ul exact NU e batut în cuie)
+> Recomandare Lead Dev: **Pixel 7 second-hand (~450€)** ca exemplu solid — dar **alegerea finală e flexibilă**, depinde de disponibilitate și preț la momentul achiziției.
+
+---
+
+## Regula generală
+
+**Codul YBOS NU presupune un model anume.** Device-specific code stă izolat în `l0/src/hw/` și `platform/`. Orice device ARM64 cu NPU dedicat + bootloader unlockable + AOSP/LineageOS/GrapheneOS community support poate deveni target test. Modelul exact e o alegere de **moment de cumpărare**, nu o constrângere arhitecturală.
 
 ---
 
@@ -31,9 +37,11 @@
 
 ---
 
-## Concrete options (sorted by recommendation)
+## Concrete options (sorted by recommendation, NOT fixed choice)
 
-### 🥇 Pixel 7 — recomandare top
+> Orice device de mai jos e acceptabil. Alegerea finală depinde de ce găsește George la momentul cumpărării: disponibilitate stoc, preț, ofertă second-hand. **Nu refacem arhitectura dacă ajunge un OnePlus în loc de Pixel.**
+
+### Pixel 7 — recomandare top (exemplu)
 - **Preț**: ~400-500€ second-hand (verificat eBay, Vinted, Backmarket)
 - **Avantaj**:
   - Best AOSP support out-there
@@ -45,12 +53,12 @@
   - Modem cam slab vs concurența (Samsung, Snapdragon)
   - Doar 5 ani updates Google (vs 7 la Pixel 8)
 
-### 🥈 Pixel 8 — dacă bugetul permite
+### Pixel 8 — dacă bugetul permite
 - **Preț**: ~600-750€ second-hand / refurbished
 - **Avantaj**: Tensor G3 mai capabil pe NPU, 7 ani updates Google, 8GB RAM (12GB pentru Pro)
 - **Dezavantaj**: cost
 
-### 🥉 OnePlus 11 — alternativă Snapdragon
+### OnePlus 11 — alternativă Snapdragon
 - **Preț**: ~450-550€ second-hand
 - **Avantaj**: Snapdragon 8 Gen 2 (Hexagon NPU foarte bun), 16GB RAM variant disponibil, bootloader unlock easy
 - **Dezavantaj**: mai puțin polish ROM-uri custom, comunitate sub Pixel
@@ -64,6 +72,9 @@
 - **Preț**: ~700€ second-hand
 - **Avantaj**: hardware premium, Sony tradition AOSP-friendly, camera pro
 - **Dezavantaj**: comunitate mai mică
+
+### Nothing Phone 2 / Asus Zenfone — alte alternative valide
+- Verifică bootloader unlock status + AOSP community înainte de cumpărare.
 
 ---
 
@@ -105,11 +116,25 @@
 - [ ] **Nu** SIM-locked la un carrier specific (afectează modem unlock)
 
 Buget total pregătire dev:
-- Phone: 400-700€
+- Phone: 400-700€ (Pixel 7 indicativ; range total flexibil)
 - USB-C dock + cable bun (data transfer): 30€
 - Cititor SD pentru backup (opțional): 10€
 - Pad antistatic (când deschizi telefonul): 10€
 - **Total**: ~450-750€
+
+---
+
+## Implicații cod (regulă consecventă cu YBOSClaude.md §8.7)
+
+Nu hardcoda în cod generic (orchestrator, agenți, firewall, UI):
+- ❌ `if device == "gs101"` sau `if soc == "tensor-g2"`
+- ❌ `const NPU_PATH: &str = "/sys/devices/.../edgetpu0"`
+- ❌ Paths specifice doar la Pixel kernel
+
+În schimb:
+- ✅ Trait `HwAccelerator` cu impls multiple (`TensorEdgeTpu`, `HexagonNpu`, `MediatekApu`, `CpuFallback`)
+- ✅ Runtime detection prin `/sys/class/devfreq/` + capability probing
+- ✅ Toate device-specific paths se rezolvă în `l0/src/hw/<vendor>.rs`
 
 ---
 
@@ -131,4 +156,4 @@ Dacă proiectul prinde tracțiune (v1.0+), opțiuni:
 - **Mediu termen**: custom firmware pe device popular (Pixel 7 / 8 cu YBOS preinstalat)
 - **Pe termen lung**: hardware custom proiectat — necesită capital VC
 
-Nu e decizie pentru acum. MVP demo pe Pixel 7 stock cu YBOS flashed.
+Nu e decizie pentru acum. MVP demo pe orice ARM64 + NPU + AOSP-friendly device pe care George îl achiziționează.
