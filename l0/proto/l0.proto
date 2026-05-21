@@ -1,0 +1,94 @@
+syntax = "proto3";
+
+// Remus L0 gRPC interface — implementare in S6.4.
+// Acest fisier defineste contractul intre L0 (Rust daemon) si L1 (Python).
+
+package remus.l0.v1;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Identity
+// ─────────────────────────────────────────────────────────────────────────────
+
+service IdentityService {
+  // Returneaza nucleul identitar verificat (HMAC ok pe identity_core.bin).
+  // L1 il foloseste pentru injectie in system prompt.
+  rpc GetIdentity(GetIdentityRequest) returns (Identity);
+}
+
+message GetIdentityRequest {}
+
+message Identity {
+  string remus_id     = 1;
+  string device_id    = 2;
+  string device_role  = 3;  // primary | satellite | live
+  string creator      = 4;
+  string nucleus      = 5;  // textul nucleului identitar
+  uint64 generated_at = 6;  // unix ts
+  uint32 version      = 7;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Telemetry (server-streaming)
+// ─────────────────────────────────────────────────────────────────────────────
+
+service TelemetryService {
+  // Stream de citiri hardware. L1 se aboneaza, L0 publica la fiecare tick.
+  rpc Subscribe(SubscribeRequest) returns (stream TelemetryFrame);
+}
+
+message SubscribeRequest {
+  uint32 interval_ms = 1;  // 0 = default L0 (~5000 ms)
+}
+
+message TelemetryFrame {
+  uint64 timestamp_ms       = 1;
+  double cpu_percent        = 2;
+  double cpu_temp_pkg_c     = 3;
+  double ram_percent        = 4;
+  double ram_available_gb   = 5;
+  double disk_percent       = 6;
+  double disk_free_gb       = 7;
+  optional BatteryInfo battery = 8;
+  repeated ThermalZone thermal = 9;
+}
+
+message BatteryInfo {
+  uint32 capacity_percent = 1;
+  string status           = 2;  // charging | discharging | full | unknown
+  bool   plugged          = 3;
+  double power_draw_w     = 4;
+}
+
+message ThermalZone {
+  string name      = 1;
+  double temp_c    = 2;
+  bool   throttled = 3;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Reflex actions (L1 cere L0 sa actioneze)
+// ─────────────────────────────────────────────────────────────────────────────
+
+service ReflexService {
+  rpc RequestAction(ActionRequest) returns (ActionResponse);
+}
+
+message ActionRequest {
+  oneof action {
+    CpuGovernor   set_cpu_governor   = 1;
+    BrightnessSet set_brightness     = 2;
+    FanCurveSet   set_fan_curve      = 3;
+    SuspendCmd    suspend            = 4;
+  }
+}
+
+message CpuGovernor   { string governor = 1; }  // performance|powersave|ondemand|schedutil
+message BrightnessSet { uint32 percent  = 1; }  // 0..100
+message FanCurveSet   { repeated FanPoint points = 1; }
+message FanPoint      { uint32 temp_c = 1; uint32 fan_percent = 2; }
+message SuspendCmd    { uint32 delay_ms = 1; }
+
+message ActionResponse {
+  bool   ok    = 1;
+  string error = 2;
+}

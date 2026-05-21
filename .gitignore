@@ -1,0 +1,58 @@
+# Rust
+target/
+*.rs.bk
+Cargo.lock
+
+# Identitate per-user — NICIODATĂ în git
+config/identity_core.bin
+config/identity_core.salt
+config/k_envelope_*.bin
+config/bip39.lock
+config/profile.json
+config/settings.json
+config/l0_sacred.hashes.json
+
+# Keys & certs
+keys/
+certs/
+*.pem
+*.key
+
+# AOSP build artifacts (când vom adăuga platform/)
+out/
+.repo/
+*.img
+*.apk
+*.bin
+!l0/src/identity/blob.rs
+
+# Local data
+data/
+memory/
+*.db
+*.db-journal
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*.bk
+*~
+.DS_Store
+
+# Logs
+logs/
+*.log
+
+# Python tooling (dev tools only, nu runtime)
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Claude Code workspace
+.claude/
+
+# Environment
+.env
+.env.local

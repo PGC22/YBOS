@@ -1,0 +1,12 @@
+# Rust build artifacts — folder mare, regenerable din Cargo.lock + cod
+target/
+
+# Editor backups
+*.swp
+*.bk
+*~
+
+# Runtime artifacts cand daemonul ruleaza din l0/ (cwd) — REMUS_ROOT cade pe
+# l0/ in loc de root repo. Pana cand path detection e fixat, gitignored.
+# Canonicalul traieste la <repo_root>/config/.
+config/
