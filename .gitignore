@@ -65,3 +65,4 @@ venv/
 # Environment
 .env
 .env.local
+out/

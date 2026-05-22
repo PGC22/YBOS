@@ -10,3 +10,4 @@ target/
 # Canonicalul traieste in ${YBOS_DATA}/identity.
 config/
 .ybos-data/
+target/aarch64-linux-android/

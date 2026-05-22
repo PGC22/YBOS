@@ -1,0 +1,34 @@
+# ybos_l0.te — SELinux policy for YBOS L0 daemon
+# WHY: Implements deny-by-default security for the core daemon.
+
+type ybos_l0, domain;
+type ybos_l0_exec, exec_type, file_type, system_file_type;
+type ybos_data_file, file_type, data_file_type, core_data_file_type;
+
+# Transition to ybos_l0 domain when executing ybos-l0 binary
+init_daemon_domain(ybos_l0)
+
+# Allow reading hardware monitoring info
+allow ybos_l0 sysfs_hwmon:dir r_dir_perms;
+allow ybos_l0 sysfs_hwmon:file r_file_perms;
+
+# Allow reading ACPI / thermal info
+allow ybos_l0 sysfs_thermal:dir r_dir_perms;
+allow ybos_l0 sysfs_thermal:file r_file_perms;
+
+# Allow data directory access
+allow ybos_l0 ybos_data_file:dir create_dir_perms;
+allow ybos_l0 ybos_data_file:file create_file_perms;
+
+# Networking: Allow binding to localhost for MQTT and gRPC
+allow ybos_l0 self:tcp_socket { create_socket_perms_no_ioctl listen accept };
+allow ybos_l0 node:tcp_socket node_bind;
+allow ybos_l0 port:tcp_socket name_bind;
+# Explicit ports (MQTT 11883, gRPC 50051)
+# Note: In production, we should define specific port labels
+allow ybos_l0 self:udp_socket create_socket_perms_no_ioctl;
+
+# Deny everything else by default (implicit in SELinux)
+# Explicit denials for sensitive paths can be added here
+neverallow { domain -ybos_l0 -init -vold } ybos_data_file:dir *;
+neverallow { domain -ybos_l0 -init -vold } ybos_data_file:file *;

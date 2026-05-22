@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest>
+  <!-- Remote for official AOSP -->
+  <remote name="aosp"
+          fetch="https://android.googlesource.com/"
+          review="android-review.googlesource.com" />
+
+  <!-- Remote for YBOS custom forks (placeholder) -->
+  <remote name="ybos"
+          fetch="https://github.com/PGC22/"
+          review="github.com" />
+
+  <default revision="refs/tags/android-14.0.0_r1"
+           remote="aosp"
+           sync-j="4" />
+
+  <!-- AOSP projects would go here.
+       In a real world scenario, we'd include the full AOSP manifest.
+       For Y2, we provide this scaffold. -->
+
+  <!-- Example of a YBOS custom project fork placeholder -->
+  <!-- <project path="device/ybos/common" name="ybos_device_common" remote="ybos" revision="main" /> -->
+
+</manifest>

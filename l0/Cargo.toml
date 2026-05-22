@@ -66,3 +66,7 @@ lto = "thin"
 codegen-units = 1
 strip = "symbols"
 panic = "abort"
+
+# Android target configuration
+# Note: actual linker paths are handled in .cargo/config.toml via env vars
+[target.aarch64-linux-android]

@@ -1,0 +1,24 @@
+# init.ybos.rc — YBOS L0 daemon service definition
+# WHY: Ensures ybos-l0 starts at boot with correct permissions and environment.
+
+on post-fs-data
+    # Create directory for YBOS persistent data (Identity, etc.)
+    mkdir /data/ybos 0770 ybos ybos
+    # Set SELinux label for the data directory
+    restorecon_recursive /data/ybos
+
+service ybos-l0 /system/bin/ybos-l0
+    class main
+    user ybos
+    group ybos system
+    # Capabilities are intentionally narrow today and will be re-evaluated in
+    # Y2.b on a real device:
+    #   - CHOWN: needed if daemon ever has to fix ownership on its data dir
+    #            after a recovery; remove if unused once tested on device.
+    #   - DAC_OVERRIDE: kept defensively for the same recovery case.
+    # Final list to be tightened post-device using strace/auditd evidence.
+    capabilities CHOWN DAC_OVERRIDE
+    restart_period 5
+    oneshot false
+    # Restart on crash
+    onrestart restart ybos-l0
