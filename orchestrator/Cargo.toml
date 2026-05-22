@@ -18,7 +18,6 @@ sha2 = { workspace = true }
 uuid = { version = "1", features = ["v4", "serde"] }
 toml = "0.8"
 async-trait = "0.1"
-tokio-stream = { version = "0.1", features = ["net"] }
 
 [build-dependencies]
 tonic-build = "0.12"
@@ -27,3 +26,5 @@ protoc-bin-vendored = "3"
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt", "test-util"] }
 ybos-l0 = { path = "../l0", features = ["dev_test_init"] }
+# tokio-stream is only used by the end_to_end integration test (TcpListenerStream).
+tokio-stream = { version = "0.1", features = ["net"] }

@@ -97,7 +97,7 @@ pub fn revoke_session(session_id: SessionId) -> Result<()> {
     session_manager()?.revoke_session(session_id)
 }
 
-pub fn revoke_all() -> Result<()> {
+pub fn revoke_all() -> Result<usize> {
     session_manager()?.revoke_all()
 }
 
@@ -175,12 +175,14 @@ impl SessionManager {
         Ok(())
     }
 
-    pub fn revoke_all(&self) -> Result<()> {
-        self.active
+    pub fn revoke_all(&self) -> Result<usize> {
+        let mut active = self
+            .active
             .write()
-            .map_err(|e| anyhow!("session lock poisoned: {}", e))?
-            .clear();
-        Ok(())
+            .map_err(|e| anyhow!("session lock poisoned: {}", e))?;
+        let count = active.len();
+        active.clear();
+        Ok(count)
     }
 
     pub fn list_active(&self) -> Vec<SessionInfo> {
@@ -253,7 +255,8 @@ mod tests {
             .unwrap();
         assert_eq!(manager.list_active().len(), 2);
 
-        manager.revoke_all().unwrap();
+        let revoked = manager.revoke_all().unwrap();
+        assert_eq!(revoked, 2);
         assert!(manager.list_active().is_empty());
     }
 
