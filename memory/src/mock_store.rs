@@ -33,7 +33,7 @@ impl MockVectorStore {
 #[async_trait]
 impl VectorStore for MockVectorStore {
     async fn insert(&self, item: VectorItem) -> Result<VectorId, MemoryError> {
-        let mut dim_guard = self.dimension.write().unwrap();
+        let mut dim_guard = self.dimension.write().expect("MockVectorStore: dimension lock poisoned");
         if let Some(dim) = *dim_guard {
             if item.embedding.len() != dim {
                 return Err(MemoryError::InvalidEmbedding(format!(
@@ -47,7 +47,7 @@ impl VectorStore for MockVectorStore {
         }
 
         let id = VectorId::new_v4();
-        let mut items = self.items.write().unwrap();
+        let mut items = self.items.write().expect("MockVectorStore: items lock poisoned");
         items.insert(id, item);
         Ok(id)
     }
@@ -61,7 +61,7 @@ impl VectorStore for MockVectorStore {
     }
 
     async fn query_top_k(&self, query: VectorQuery, k: usize) -> Result<Vec<VectorMatch>, MemoryError> {
-        let items = self.items.read().unwrap();
+        let items = self.items.read().expect("MockVectorStore: items lock poisoned");
         let mut matches: Vec<VectorMatch> = items.iter().map(|(id, item)| {
             let score = Self::cosine_similarity(&query.embedding, &item.embedding);
             VectorMatch {
@@ -77,7 +77,7 @@ impl VectorStore for MockVectorStore {
     }
 
     async fn delete(&self, id: VectorId) -> Result<(), MemoryError> {
-        let mut items = self.items.write().unwrap();
+        let mut items = self.items.write().expect("MockVectorStore: items lock poisoned");
         if items.remove(&id).is_some() {
             Ok(())
         } else {
@@ -86,7 +86,7 @@ impl VectorStore for MockVectorStore {
     }
 
     async fn count(&self) -> Result<usize, MemoryError> {
-        let items = self.items.read().unwrap();
+        let items = self.items.read().expect("MockVectorStore: items lock poisoned");
         Ok(items.len())
     }
 }

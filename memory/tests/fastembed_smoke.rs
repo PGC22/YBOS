@@ -9,7 +9,7 @@ mod tests {
         let cache_dir = PathBuf::from("target/test-models/fastembed");
         std::fs::create_dir_all(&cache_dir).unwrap();
 
-        let embedder = FastEmbedEmbedder::load(None, Some(cache_dir)).unwrap();
+        let embedder = FastEmbedEmbedder::load(Some(cache_dir)).unwrap();
         let dimension = embedder.dimension();
         let store = SqliteVecStore::in_memory(dimension).unwrap();
 

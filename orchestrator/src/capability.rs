@@ -22,34 +22,72 @@ pub enum Operation {
 }
 
 pub fn enforce(manifest: &Manifest, op: &Operation) -> Result<()> {
-    match op {
+    let res = match op {
         Operation::NetConnect(domain) => {
             if manifest.capabilities.net_domains.iter().any(|d| d == domain) {
                 Ok(())
             } else {
-                Err(anyhow!(CapabilityError::Denied(format!("NetConnect({})", domain))))
+                Err(anyhow!(CapabilityError::Denied(format!(
+                    "NetConnect({})",
+                    domain
+                ))))
             }
         }
         Operation::FsRead(path) => {
-            if manifest.capabilities.fs_paths.iter().any(|p| path.starts_with(p)) {
+            // Path normalization prevents ".." bypass attacks by resolving lexical components.
+            // Example: "/data/agent/../../etc/passwd" becomes "/etc/passwd".
+            let requested_clean = path_clean::clean(path);
+            let declared_clean_list: Vec<_> = manifest
+                .capabilities
+                .fs_paths
+                .iter()
+                .map(path_clean::clean)
+                .collect();
+
+            if declared_clean_list
+                .iter()
+                .any(|d| requested_clean.starts_with(d))
+            {
                 Ok(())
             } else {
-                Err(anyhow!(CapabilityError::Denied(format!("FsRead({})", path.display()))))
+                Err(anyhow!(CapabilityError::Denied(format!(
+                    "FsRead({})",
+                    requested_clean.display()
+                ))))
             }
         }
         Operation::FsWrite(path) => {
-            if manifest.capabilities.fs_paths.iter().any(|p| path.starts_with(p)) {
+            // Path normalization prevents ".." bypass attacks by resolving lexical components.
+            // Example: "/data/agent/../../etc/passwd" becomes "/etc/passwd".
+            let requested_clean = path_clean::clean(path);
+            let declared_clean_list: Vec<_> = manifest
+                .capabilities
+                .fs_paths
+                .iter()
+                .map(path_clean::clean)
+                .collect();
+
+            if declared_clean_list
+                .iter()
+                .any(|d| requested_clean.starts_with(d))
+            {
                 Ok(())
             } else {
-                Err(anyhow!(CapabilityError::Denied(format!("FsWrite({})", path.display()))))
+                Err(anyhow!(CapabilityError::Denied(format!(
+                    "FsWrite({})",
+                    requested_clean.display()
+                ))))
             }
         }
         Operation::UserContextRead => {
-            if manifest.capabilities.data_user_prefs == AccessLevel::Read ||
-               manifest.capabilities.data_user_prefs == AccessLevel::ReadWrite {
+            if manifest.capabilities.data_user_prefs == AccessLevel::Read
+                || manifest.capabilities.data_user_prefs == AccessLevel::ReadWrite
+            {
                 Ok(())
             } else {
-                Err(anyhow!(CapabilityError::Denied("UserContextRead".to_string())))
+                Err(anyhow!(CapabilityError::Denied(
+                    "UserContextRead".to_string()
+                )))
             }
         }
         Operation::UserContextWrite => {
@@ -81,5 +119,37 @@ pub fn enforce(manifest: &Manifest, op: &Operation) -> Result<()> {
                 Err(anyhow!(CapabilityError::Denied("MemoryWrite".to_string())))
             }
         }
+    };
+
+    // Audit log
+    let op_log = match op {
+        Operation::FsRead(path) => Operation::FsRead(path_clean::clean(path)),
+        Operation::FsWrite(path) => Operation::FsWrite(path_clean::clean(path)),
+        _ => op.clone(),
+    };
+
+    match &res {
+        Ok(_) => {
+            tracing::info!(
+                target: "ybos.audit",
+                agent = %manifest.name,
+                op = ?op_log,
+                outcome = "allow",
+                "Capability check"
+            );
+        }
+        Err(e) => {
+            let reason_str = e.to_string();
+            tracing::warn!(
+                target: "ybos.audit",
+                agent = %manifest.name,
+                op = ?op_log,
+                outcome = "deny",
+                reason = %reason_str,
+                "Capability check denied"
+            );
+        }
     }
+
+    res
 }

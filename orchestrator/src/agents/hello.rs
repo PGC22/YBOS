@@ -67,21 +67,21 @@ impl Agent for HelloAgent {
         if let Some(text) = &self.text_to_remember {
             capability::enforce(&self.manifest, &Operation::MemoryWrite)?;
             let embedding = ctx.embedder.embed(text).await?;
+
             ctx.memory
                 .insert(VectorItem {
-                    embedding,
+                    embedding: embedding.clone(),
                     text: text.clone(),
                     metadata: json!({"agent": self.manifest.name}),
                 })
                 .await?;
 
             capability::enforce(&self.manifest, &Operation::MemoryRead)?;
-            let query_embedding = ctx.embedder.embed(text).await?;
             let matches = ctx
                 .memory
                 .query_top_k(
                     VectorQuery {
-                        embedding: query_embedding,
+                        embedding,
                     },
                     1,
                 )
