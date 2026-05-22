@@ -59,7 +59,7 @@ impl Embedder for MockEmbedder {
     fn model_info(&self) -> EmbedderInfo {
         EmbedderInfo {
             backend: "mock".into(),
-            model_name: "mock-bge-small".into(),
+            model_name: "mock-deterministic-sha256".into(),
             dimension: self.dimension,
         }
     }

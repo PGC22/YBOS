@@ -17,6 +17,7 @@ ybos-proto = { workspace = true }
 hex = { workspace = true }
 sha2 = { workspace = true }
 uuid = { version = "1", features = ["v4", "serde"] }
+path-clean = "1.0.1"
 toml = "0.8"
 async-trait = "0.1"
 ybos-inference = { path = "../inference" }

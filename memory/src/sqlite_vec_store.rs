@@ -145,16 +145,34 @@ impl VectorStore for SqliteVecStore {
 
             let rows = stmt.query_map(params![embedding_bytes, k], |row| {
                 let id_bytes: Vec<u8> = row.get(0)?;
-                let id = Uuid::from_slice(&id_bytes).unwrap();
+                let id = Uuid::from_slice(&id_bytes).map_err(|e| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        0,
+                        rusqlite::types::Type::Blob,
+                        Box::new(e),
+                    )
+                })?;
                 let text: String = row.get(1)?;
                 let metadata_str: String = row.get(2)?;
-                let metadata: serde_json::Value = serde_json::from_str(&metadata_str).unwrap();
+                let metadata: serde_json::Value = serde_json::from_str(&metadata_str).map_err(|e| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        2,
+                        rusqlite::types::Type::Text,
+                        Box::new(e),
+                    )
+                })?;
                 let distance: f32 = row.get(3)?;
 
                 Ok(VectorMatch {
                     id,
                     text,
                     metadata,
+                    // sqlite-vec returns L2 distance by default. We expose `score = 1.0 - distance`
+                    // so that "higher is better" matches the VectorMatch.score documentation
+                    // (Cosine similarity-like). NOTE: this approximation is only meaningful for
+                    // unit-normalized embeddings (e.g. BGE-small outputs are L2-normalized to
+                    // length 1). For non-normalized vectors, the score can be negative or >1.
+                    // Callers using a non-normalizing embedder must interpret results carefully.
                     score: 1.0 - distance,
                 })
             }).map_err(|e| MemoryError::Storage(e.to_string()))?;

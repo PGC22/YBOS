@@ -10,14 +10,9 @@ pub struct FastEmbedEmbedder {
 }
 
 impl FastEmbedEmbedder {
-    pub fn load(model_name: Option<String>, cache_dir: Option<PathBuf>) -> Result<Self, MemoryError> {
-        let model_enum = if let Some(_name) = model_name {
-            // Mapping string name to enum might be needed, but fastembed has many models.
-            // For now, let's just use BGE-small-en-v1.5 as default or try to parse.
-            EmbeddingModel::BGESmallENV15
-        } else {
-            EmbeddingModel::BGESmallENV15
-        };
+    /// Currently locked to BAAI/bge-small-en-v1.5. Future versions may expose model selection.
+    pub fn load(cache_dir: Option<PathBuf>) -> Result<Self, MemoryError> {
+        let model_enum = EmbeddingModel::BGESmallENV15;
 
         let mut options = InitOptions::new(model_enum);
         if let Some(dir) = cache_dir {
