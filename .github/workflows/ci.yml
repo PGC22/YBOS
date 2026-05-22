@@ -29,10 +29,9 @@ jobs:
       - name: Install cross
         run: cargo install cross
       - name: Build with cross
-        # NDK image override lives in l0/Cross.toml so local dev and CI
+        # NDK image override lives in Cross.toml (root) so local dev and CI
         # use the same toolchain.
-        working-directory: l0
-        run: cross build --release --target aarch64-linux-android
+        run: cross build -p ybos-l0 --release --target aarch64-linux-android
       - name: Verify binary
         run: |
           file l0/target/aarch64-linux-android/release/ybos-l0 | grep "ELF 64-bit LSB" | grep "ARM aarch64"
