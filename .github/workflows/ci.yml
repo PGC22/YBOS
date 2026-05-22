@@ -7,18 +7,15 @@ on:
     branches: [ main ]
 
 jobs:
-  test_l0:
-    name: Build & Test l0
+  test:
+    name: Build & Test Workspace
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
       - name: Run tests
-        # protoc is provided at build time by protoc-bin-vendored (build-dep),
-        # so no system protoc install is needed here.
-        working-directory: l0
-        run: cargo test
+        run: cargo test --workspace --features ybos-l0/dev_test_init
 
   cross_compile_android:
     name: Cross-compile l0 for Android

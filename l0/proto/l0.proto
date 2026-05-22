@@ -90,3 +90,67 @@ message ActionResponse {
   bool   ok    = 1;
   string error = 2;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Session token API (L1 calls L0 to issue tokens for laptops/peers)
+// ─────────────────────────────────────────────────────────────────────────────
+
+service SessionService {
+  // Request a new session token.
+  rpc IssueToken(IssueTokenRequest) returns (IssueTokenResponse);
+  // Revoke a specific session.
+  rpc RevokeSession(RevokeSessionRequest) returns (RevokeSessionResponse);
+  // Revoke all sessions.
+  rpc RevokeAll(RevokeAllRequest) returns (RevokeAllResponse);
+  // List all active sessions.
+  rpc ListActive(ListActiveRequest) returns (ListActiveResponse);
+  // DEV-ONLY: Initialize the session API with a master key.
+  // Must be gated behind dev_test_init feature in implementation.
+  rpc InitializeForTest(InitializeForTestRequest) returns (InitializeForTestResponse);
+}
+
+message IssueTokenRequest {
+  repeated string capabilities = 1;
+  uint64 expiry_secs = 2;
+  bytes peer_fingerprint = 3; // 32 bytes
+}
+
+message IssueTokenResponse {
+  string session_id = 1; // UUID as string
+  bytes key_bytes = 2; // 32 bytes
+  uint64 expires_at = 3; // unix ts
+}
+
+message RevokeSessionRequest {
+  string session_id = 1;
+}
+
+message RevokeSessionResponse {
+  bool revoked = 1;
+}
+
+message RevokeAllRequest {}
+
+message RevokeAllResponse {
+  uint32 revoked_count = 1;
+}
+
+message ListActiveRequest {}
+
+message ListActiveResponse {
+  repeated SessionInfo sessions = 1;
+}
+
+message SessionInfo {
+  string session_id = 1;
+  repeated string capabilities = 2;
+  uint64 issued_at = 3;
+  uint64 expires_at = 4;
+  bytes peer_fingerprint = 5;
+}
+
+message InitializeForTestRequest {
+  bytes master_key = 1; // 32 bytes
+}
+
+message InitializeForTestResponse {}
