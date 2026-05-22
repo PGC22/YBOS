@@ -34,7 +34,7 @@ jobs:
         run: cross build -p ybos-l0 --release --target aarch64-linux-android
       - name: Verify binary
         run: |
-          file l0/target/aarch64-linux-android/release/ybos-l0 | grep "ELF 64-bit LSB" | grep "ARM aarch64"
+          file target/aarch64-linux-android/release/ybos-l0 | grep "ELF 64-bit LSB" | grep "ARM aarch64"
 
   shellcheck:
     name: ShellCheck

@@ -69,13 +69,6 @@ protoc-bin-vendored = "3"
 tokio = { version = "1", features = ["macros", "rt", "test-util"] }
 tempfile = "3"
 
-[profile.release]
-opt-level = 3
-lto = "thin"
-codegen-units = 1
-strip = "symbols"
-panic = "abort"
-
 # Android target configuration
 # Note: actual linker paths are handled in .cargo/config.toml via env vars
 [target.aarch64-linux-android]
