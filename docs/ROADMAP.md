@@ -23,7 +23,6 @@
 - Session token issuance API (HKDF + scope + revoke + list)
 - L0 SACRED tripwire pe layout `${YBOS_DATA}/identity/`
 - Trait stubs envelope B (TEE) + C (YubiKey) pentru fază viitoare
-- 48 tests pass
 
 **Known carry-over flag** (notat post-merge):
 - Envelope A folosește Argon2id-XOR + HMAC tag custom (acceptabil pentru dev scaffold). Înainte de production: înlocuit cu AEAD vetted (AES-GCM-SIV sau ChaCha20-Poly1305).
@@ -35,233 +34,63 @@
 - AOSP build host setup script (Ubuntu 22.04 LTS), shellcheck-clean, idempotent
 - AOSP source sync workflow + custom manifest scaffold (`ybos-aosp.xml`)
 - Cross-compile `ybos-l0` pentru `aarch64-linux-android` via `cross` crate cu `Cross.toml` (image `:edge` cu NDK modern); CI verifică binary ELF aarch64
-- AOSP overlay device-agnostic: `BoardConfigCommon.mk`, `system.prop` (cu disclaimer dev-only pe ADB/verity), `init.ybos.rc` (service ybos-l0 cu capabilities documentate), SELinux policy `ybos_l0.te`
+- AOSP overlay device-agnostic: `BoardConfigCommon.mk`, `system.prop` (cu disclaimer dev-only pe ADB/verity), `init.ybos.rc`, SELinux policy `ybos_l0.te`
 - `apply_overlay.sh` cu backup option
-- `FLASH_PROCEDURE.md` generic ARM64 cu secțiuni per-OEM marcate "[verificat când achiziționăm X]"
-- CI: `Build & Test l0`, `Cross-compile l0 for Android`, `ShellCheck` toate verzi
+- `FLASH_PROCEDURE.md` generic ARM64
 
 **Known carry-over flags** (pentru Y2.b post-device):
-- Capabilities `CHOWN`/`DAC_OVERRIDE` la ybos-l0 service: re-evaluate cu strace/auditd evidence pe device real
-- ADB-on + verity-off din `system.prop`: mută într-un `system_dev.prop` aplicat doar pentru build variants `eng`/`userdebug`
-- `Cross.toml` image pin: schimbă din `:edge` (rolling) la SHA fix sau release tag când cross-rs publică versiune stabilă cu NDK modern
+- Capabilities `CHOWN`/`DAC_OVERRIDE` la ybos-l0 service: re-evaluate cu strace/auditd pe device
+- ADB-on + verity-off din `system.prop`: mută într-un `system_dev.prop` per build variants
+- `Cross.toml` image pin: schimbă din `:edge` la SHA fix când cross-rs publică stabil cu NDK modern
 - `ybos` user/group: definește în AOSP system files
 
 ---
 
 ## Y2.b — Flash + boot verification (BLOCKED pe achiziție device)
 
-> Execută George manual când ajunge device-ul. Folosește scaffolds + documentația din Y2.
-
 - Selectare device-specific BoardConfig (Pixel / OnePlus / etc.)
 - Kernel config adaptat
-- Build complet AOSP YBOS image pentru device-ul achiziționat
+- Build complet AOSP YBOS image
 - Flash + boot
 - Verificare ybos-l0 daemon rulează, telemetria curge
 
 ---
 
-## Y3 — L1 orchestrator skeleton + L0 SessionService gRPC ✅ Done (PR #3 merged)
+## Y3 — L1 orchestrator skeleton + L0 SessionService gRPC + Cargo workspace ✅ Done (PR #3 merged + PR #4 follow-up cleanup)
 
 - Cargo workspace conversion (members `[l0, orchestrator]`, shared deps)
 - L0 SessionService gRPC nouă: 5 RPCs (IssueToken / RevokeSession / RevokeAll / ListActive / InitializeForTest cu feature gate `dev_test_init`)
 - `l0/src/lib.rs` adăugat pentru testing in-process (main.rs intact, L0 SACRED preserved)
 - `YBOS_L0_GRPC_LISTEN` env var pentru port override
-- orchestrator crate cu: Agent trait + AgentRuntime hybrid (InProcessRuntime impl + SubprocessRuntime placeholder), Manifest cu Capabilities + AccessLevel, capability enforce, AgentRegistry static+runtime, L0Client cu issue_session_token + get_identity, HelloAgent demo
+- orchestrator crate cu: Agent trait + AgentRuntime hybrid (InProcessRuntime + SubprocessRuntime placeholder), Manifest + Capabilities + AccessLevel, capability enforce, AgentRegistry, L0Client, HelloAgent
 - End-to-end test: orchestrator obține token real via gRPC + register/invoke agents + capability enforcement
-- `Cross.toml` mutat la root (workspace-friendly), CI `cross build -p ybos-l0`
+- `Cross.toml` mutat la root (workspace-friendly)
+- Follow-up cleanup PR #4: `revoke_all` returnează count (no TOCTOU), AgentRegistry Runtime factory cache-uiește instance (parity cu Static), RwLock messages descriptive, tokio-stream relocat în dev-deps
 
-**Known carry-over flags** (post-merge):
-- Proto duplicate compilation (l0 + orchestrator generează tipuri Rust distincte din același `l0.proto`) — follow-up: shared `ybos-proto` crate
-- `revoke_all` count via list-then-revoke (TOCTOU minor) — fix necesită update în Y1 session.rs
-- AgentRegistry runtime factory creează agent nou la fiecare `get()` (vs Static shared Arc) — inconsistent lifecycle
-- `tokio-stream` cu feature "net" inocuu (feature nu există, silently ignorat)
-- `.unwrap()` pe RwLock în orchestrator (panică la poison)
+**Known carry-over flags** (rămase după PR #4):
+- Proto duplicate compilation (l0 + orchestrator generează tipuri Rust distincte din `l0.proto`) — **adresat în Y5 prin extract `ybos-proto` shared crate**
 - Capability path normalization absent (`FsRead(../../../etc/passwd)` bypass risk) — adresat în Y7 firewall hardening
 
 ---
 
-## Y4 — LLM inference layer (skeleton + LocalLlama CPU) ⭐ NEXT
+## Y4 — LLM inference layer (skeleton + LocalLlama CPU) ✅ Done (PR #5 merged)
 
-> Decizii agreate (2026-05-22 sesiune Y4):
-> - **Scope Y4**: skeleton COMPLET + LocalLlama real via `llama-cpp-2` Rust crate (CPU-only, no NPU). Cross-compile aarch64 deferat (NPU acceleration mlc-llm e Y4.b post-device).
-> - **Workspace**: crate nou `inference/` (package `ybos-inference`).
-> - **Streaming**: trait Inference are AMBELE — `complete()` sync + `complete_stream()` streaming.
+- Crate nou `inference/` (ybos-inference) ca workspace member
+- Inference trait cu `complete()` sync + `complete_stream()` streaming (Pin<Box<dyn Stream>>)
+- MockInference cu canned responses cycling, simulated streaming delay
+- LocalLlama via `llama-cpp-2 0.1.146`, CPU-only, EOG token check, stop sequence post-token, sampler chain (top_p + temp + seed)
+- RemoteAPI stub cu `SecretString` + Debug redacted (returns NotImplemented pentru cloud burst viitor)
+- CI: `Build & Test Workspace` rapid (no llama compile in default), `Build & Test inference (mock)`, `LocalLlama smoke test` (cu model cache, TinyLlama-1.1B Q4_K_M ~600MB)
+- LlamaBackend singleton via OnceLock + INIT_MUTEX
 
-### Scope Y4
-
-#### A. Crate nou `inference/` (workspace member)
-
-Layout:
-```
-inference/
-├── Cargo.toml                # package = ybos-inference; features pentru LocalLlama heavy build
-├── src/
-│   ├── lib.rs                # public re-exports
-│   ├── trait_def.rs          # Inference trait (sync + streaming)
-│   ├── types.rs              # CompleteRequest, CompleteResponse, Token, InferenceError
-│   ├── mock.rs               # MockInference (canned responses, no LLM)
-│   ├── local_llama.rs        # LocalLlama via llama-cpp-2 (cfg-gated cu feature `local_llama`)
-│   └── remote_api.rs         # RemoteAPI stub (returnează NotImplemented; cloud burst design Y... ulterior)
-└── tests/
-    ├── mock_smoke.rs         # rulează default, fără model
-    └── llama_smoke.rs        # cfg-gated cu feature `local_llama`, descarcă model mic, rulează inference real
-```
-
-#### B. Inference trait design
-
-```rust
-#[async_trait]
-pub trait Inference: Send + Sync {
-    async fn complete(&self, req: CompleteRequest) -> Result<CompleteResponse, InferenceError>;
-    async fn complete_stream(
-        &self,
-        req: CompleteRequest,
-    ) -> Result<Pin<Box<dyn Stream<Item = Result<Token, InferenceError>> + Send>>, InferenceError>;
-    fn model_info(&self) -> ModelInfo;
-}
-
-pub struct CompleteRequest {
-    pub prompt: String,
-    pub max_tokens: usize,
-    pub temperature: f32,
-    pub top_p: f32,
-    pub stop: Vec<String>,
-    pub seed: Option<u64>,
-}
-
-pub struct CompleteResponse {
-    pub text: String,
-    pub finish_reason: FinishReason,
-    pub tokens_in: usize,
-    pub tokens_out: usize,
-}
-
-pub struct Token {
-    pub text: String,
-    pub logprob: Option<f32>,
-}
-
-pub enum FinishReason { Stop, MaxTokens, StopSequence(String), Error(String) }
-
-pub struct ModelInfo {
-    pub backend: String,        // "mock" | "local-llama" | "remote-api"
-    pub model_name: String,
-    pub context_window: usize,
-}
-
-pub enum InferenceError {
-    ModelLoad(String),
-    Generation(String),
-    InvalidRequest(String),
-    NotImplemented,
-}
-```
-
-#### C. Implementations
-
-1. **MockInference** (`src/mock.rs`):
-   - Constructor: `MockInference::new(canned_responses: Vec<String>)`
-   - `complete`: returnează următorul canned response, cycling
-   - `complete_stream`: împarte canned response în "tokens" (whitespace split) + simulate delay (50ms/token)
-   - Zero dependențe heavy
-
-2. **LocalLlama** (`src/local_llama.rs`, gated `#[cfg(feature = "local_llama")]`):
-   - Folosește `llama-cpp-2` crate ([docs.rs/llama-cpp-2](https://docs.rs/llama-cpp-2/))
-   - Constructor: `LocalLlama::load(model_path: &Path, params: LlamaParams)` — încarcă model GGUF
-   - `LlamaParams`: context_size (default 8192), n_threads (default num_cpus), n_gpu_layers (0 = CPU)
-   - `complete`: tokenize prompt → batch eval → sample → decode → return text
-   - `complete_stream`: token-by-token via callback, yielded prin `tokio::sync::mpsc` channel
-   - Stop sequences enforced via post-token check
-   - `model_info()` returnează info despre modelul încărcat (din metadata GGUF)
-   - Error mapping: llama-cpp-2 errors → InferenceError
-
-3. **RemoteAPI stub** (`src/remote_api.rs`):
-   - Struct cu `endpoint: String, api_key: SecretString` (NU implementat call efectiv în Y4)
-   - `complete`/`complete_stream` returnează `Err(InferenceError::NotImplemented)`
-   - Existență la nivel de trait pentru viitor cloud burst — design ready, no API leak risk
-
-#### D. Cargo features pentru a izola greutatea llama.cpp
-
-`inference/Cargo.toml`:
-```toml
-[features]
-default = ["mock"]
-mock = []                       # always available, no deps
-local_llama = ["llama-cpp-2"]   # heavy: cmake + clang + native build
-remote_api = []                 # always available, stub for now
-
-[dependencies]
-llama-cpp-2 = { version = "...", optional = true }
-# trait infra:
-async-trait = { workspace = true }
-tokio-stream = { workspace = true }
-futures = "0.3"
-thiserror = { workspace = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
-secrecy = "0.8"                # pentru SecretString în RemoteAPI
-```
-
-Workspace `Cargo.toml` adăugă membru:
-```toml
-[workspace]
-members = ["l0", "orchestrator", "inference"]
-```
-
-#### E. Smoke tests
-
-1. **`inference/tests/mock_smoke.rs`** (default, fără feature):
-   - Construct MockInference cu 2 canned responses
-   - `complete()` → assert text egal cu canned[0]
-   - `complete_stream()` → consum stream → join tokens → assert egal cu canned[1]
-   - Test FinishReason::MaxTokens când canned > max_tokens
-
-2. **`inference/tests/llama_smoke.rs`** (cfg `feature = "local_llama"`):
-   - Download `TinyLlama-1.1B-Chat-v1.0.Q4_K_M.gguf` (~600MB) într-un cache dir (`OUT_DIR/models/` sau `target/test-models/`) DOAR DACĂ nu există deja
-   - LocalLlama::load(path) → asserts ok
-   - `complete(prompt = "Hello, what is 2+2?", max_tokens = 32)` → asserts response non-gol + nu panică
-   - `complete_stream(...)` → consumă stream → asserts > 0 tokens emise
-
-3. **Mock tests pot rula în orice job CI.** Llama smoke test = nou CI job opt-in.
-
-#### F. CI
-
-- **Job nou**: `Build & Test inference (mock)` — `cargo test -p ybos-inference` (default features, no llama-cpp-2)
-- **Job nou** (opt-in, mai lent): `LocalLlama smoke test` — `cargo test -p ybos-inference --features local_llama`
-  - Caching: model file salvat în GitHub Actions cache (key bazat pe model name + version)
-  - cmake + clang necesare (preinstalate pe ubuntu-latest)
-  - Timeout generos (10 min) pentru cmake build llama.cpp + download model
-- **Job existent**: `Build & Test Workspace` — invocă `cargo test --workspace` cu defaults (mock only, no llama dep) ca să rămână rapid
-- **Job existent**: `Cross-compile l0 for Android` — neschimbat, NU adăugăm inference la cross-compile (NPU/Android-specific = Y4.b)
-- **Job existent**: `ShellCheck` — neschimbat
-
-#### G. Documentation
-
-- `inference/README.md` — explain crate features, cum se download model, cum se rulează LocalLlama smoke local
-- NU update YBOSClaude.md / ARCHITECTURE.md / etc. (out of scope; Lead Dev face în review post-merge dacă necesar)
-
-### Acceptance criteria Y4
-
-- [ ] `inference/` crate creat ca workspace member, `cargo build -p ybos-inference` verde
-- [ ] `cargo test --workspace` verde (mock tests pass, llama tests filtered out fără feature)
-- [ ] `cargo test -p ybos-inference --features local_llama` verde (CI cu cache model, rulează inference real cu TinyLlama)
-- [ ] Inference trait cu `complete()` + `complete_stream()` definit corect
-- [ ] MockInference, LocalLlama (cfg `local_llama`), RemoteAPI stub toate implementate
-- [ ] Zero modificări în `l0/**`, `orchestrator/**`, `docs/**`, `YBOSClaude.md`, `README.md` root, `reference/**`, `platform/**`
-- [ ] Workspace `Cargo.toml` actualizat doar cu noul membru
-- [ ] CI: toate jobs existing verzi + 2 jobs noi (inference mock + LocalLlama)
-- [ ] `inference/README.md` documentat cu features + how-to local run
-
-### Ce NU intra în Y4
-
-- NPU acceleration via mlc-llm — Y4.b post-device
-- Cross-compile inference pentru aarch64-linux-android — Y4.b
-- Orchestrator integration (Agent → Inference injection) — fază separată (Y4.c sau Y5)
-- Vector store (sqlite-vec / qdrant) — fază separată (Y4.d)
-- RemoteAPI real impl (Anthropic / OpenAI calls) — Y15 (cloud burst activation)
-- LLM judge sub-agent (Privacy Firewall Layer 3) — Y9
-- Streaming over gRPC (orchestrator-side wrapper) — fază separată
-- Tool calling / function calling API — fază separată
+**Known carry-over flags** (post-PR #5):
+- `LocalLlama::complete()` rulează blocking llama-cpp-2 calls direct în corpul `async fn` (NU în `spawn_blocking`) — blochează tokio worker la load concurent; **adresat în Y5** (prerequisite pentru orchestrator integration)
+- `FinishReason::StopSequence` și `FinishReason::Error` sunt unit variants fără payload `String` (lossy info despre care stop sequence sau ce eroare); **adresat în Y5**
+- Seed truncat la `u32` la `LlamaSampler::dist(seed as u32)` — minor entropy reduction; păstrat (API constraint llama-cpp-2 0.1.x)
+- `model_name: "GGUF Model"` placeholder (nu citește GGUF metadata) — adresat în Y5 dacă fezabil cu llama-cpp-2 API
+- Context recreate la fiecare `complete()` call (expensive pentru repeat invocations) — deferat, optimization separată
+- `Token.logprob: None` mereu — deferat, neimplementat
+- Token text format diferit între Mock (manual `" " + token`) și LocalLlama (decoded raw cu spacing intrinsec din tokenizer) — minor inconsistență semantică
 
 ---
 
@@ -270,33 +99,253 @@ members = ["l0", "orchestrator", "inference"]
 - mlc-llm integration pentru NPU acceleration (Tensor G2/G3, Hexagon, Mediatek APU)
 - Cross-compile `ybos-inference` pentru aarch64-linux-android
 - Benchmark CPU vs NPU pe device real
-- RAM usage profiling (<3GB target per ROADMAP acceptance)
-- Cu device disponibil: validare prompt → response în <5s cu model 3B
+- RAM usage profiling (<3GB target)
+- Validare prompt → response în <5s cu model 3B
 
 ---
 
-## Y5+ — Faze enumerate (detaliu TBD când ajungem)
+## Y5 — Orchestrator ⇌ Inference integration + ybos-proto extraction + Y4 carry-over fixes ⭐ NEXT
 
-Doar headline-uri. Semne de întrebare doar unde **chiar afectează faza activă (Y4)**.
+> Decizii agreate (2026-05-22 sesiune Y5):
+> - **Inference injection model** = `AgentContext` (struct cu `inference: Arc<dyn Inference>`, extensibil pentru servicii viitoare: memory, http_client). `Agent::invoke` primește `&AgentContext` ca al doilea parametru (BREAKING change to Agent trait).
+> - **Capability nouă** = `llm: bool` în `Capabilities` struct + nou `Operation::LlmCall` în capability enforce. Agenți fără `llm = true` în manifest primesc `CapabilityDenied` dacă cer inference.
+> - **ybos-proto extraction**: da, în Y5. Consolidează tipurile gRPC într-un singur workspace crate.
+> - **Y4 LocalLlama bug**: `spawn_blocking` wrap obligatoriu în Y5 (prerequisite pentru concurent agent invocation).
 
-- **Orchestrator integration cu Inference** — Agent → Inference handle prin AgentRuntime; ❓ design API: injection prin context-passing sau global handle?
-- **Vector store** (sqlite-vec sau qdrant embedded) — pentru memorie semantică per-agent. Independent de Y4.
+### Scope Y5
+
+#### A. `ybos-proto` shared crate (carry-over Y3 flag #1)
+
+Layout:
+```
+proto/
+├── Cargo.toml                  # package = ybos-proto
+├── build.rs                    # tonic-build compilează ambele proto
+├── proto/
+│   ├── l0.proto                # MUTAT din l0/proto/l0.proto (identic)
+│   └── orchestrator.proto      # MUTAT din orchestrator/proto/orchestrator.proto (identic)
+└── src/
+    └── lib.rs                  # re-exports: ybos_proto::l0::*, ybos_proto::orchestrator::*
+```
+
+`src/lib.rs`:
+```rust
+pub mod l0 {
+    tonic::include_proto!("ybos.l0.v1");
+}
+pub mod orchestrator {
+    tonic::include_proto!("ybos.orchestrator.v1");
+}
+```
+
+Consumers:
+- `l0/Cargo.toml`: add `ybos-proto = { path = "../proto" }` (or workspace path), remove `tonic-build` + `protoc-bin-vendored` build-deps + `build.rs` content gone (or build.rs deleted entirely if no other codegen)
+- `l0/src/grpc/mod.rs`: replace `pub mod pb { tonic::include_proto!("ybos.l0.v1"); }` cu `pub use ybos_proto::l0 as pb;`
+- `l0/src/grpc/{identity,telemetry,reflex,session}_service.rs`, `convert.rs`: update `use super::pb::...` paths (no source change if pb is the same alias)
+- `orchestrator/Cargo.toml`: add `ybos-proto = { path = "../proto" }`, remove `tonic-build` + `protoc-bin-vendored`, delete `build.rs` content
+- `orchestrator/src/lib.rs`: replace `pub mod pb { mod l0 { tonic::include_proto!(...); } mod orchestrator { ... } }` cu `pub use ybos_proto::{l0, orchestrator};`
+- `orchestrator/src/l0_client.rs`: update import paths (e.g. `use crate::pb::l0::session_service_client::*` → `use ybos_proto::l0::session_service_client::*`)
+- Workspace `Cargo.toml`: adăugă `"proto"` la members
+
+After extraction:
+- DELETE `l0/proto/l0.proto` (moved)
+- DELETE `orchestrator/proto/orchestrator.proto` (moved)
+- DELETE `l0/build.rs` și `orchestrator/build.rs` IF they only handled proto codegen; păstrează dacă au alte purpose
+- L0 SACRED files NU atinse (`l0/src/main.rs`, `l0/src/identity/*`)
+
+#### B. Y4 LocalLlama carry-over fixes (`inference/` crate)
+
+1. `inference/src/types.rs` — FinishReason cu payloads:
+```rust
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum FinishReason {
+    Stop,
+    MaxTokens,
+    StopSequence(String),  // which stop sequence matched
+    Error(String),         // error message
+}
+```
+   - Drop `Eq, Copy` derive (String nu e Eq/Copy). Păstrează `PartialEq` (String e PartialEq).
+
+2. `inference/src/local_llama.rs`:
+   - **Wrap `complete()` body în `tokio::task::spawn_blocking`** — toată munca llama-cpp-2 trebuie să ruleze pe blocking thread pool, nu pe tokio worker. Pattern:
+   ```rust
+   async fn complete(&self, req: CompleteRequest) -> Result<CompleteResponse, InferenceError> {
+       let model = self.model.clone();
+       let backend = self.backend.clone();
+       let context_size = self.params.context_size;
+       let n_threads = self.params.n_threads;
+       tokio::task::spawn_blocking(move || {
+           // ...all the existing sync logic, returning Result<CompleteResponse, InferenceError>
+       })
+       .await
+       .map_err(|e| InferenceError::Generation(format!("spawn_blocking failed: {}", e)))?
+   }
+   ```
+   - Update calls to use new `FinishReason::StopSequence(stop_seq.clone())` și `FinishReason::Error(msg)` în loc de unit variants.
+   - **Read `model_name` din GGUF metadata dacă fezabil**: cercetează llama-cpp-2 0.1.146 API pentru `LlamaModel::meta_val_str(model, key)` sau echivalent; cheia GGUF standard e `"general.name"`. Dacă API expune, folosește; altfel fallback la `"GGUF Model (path: <basename>)"`.
+
+3. `inference/src/mock.rs`:
+   - Update calls to `FinishReason::StopSequence`/`Error` cu payload-uri appropriate (e.g. error message "no canned").
+
+4. `inference/src/remote_api.rs`:
+   - Update calls dacă există. (probabil doar `NotImplemented`, neaffected)
+
+5. `inference/tests/mock_smoke.rs`:
+   - Update orice `assert_eq!(..., FinishReason::MaxTokens)` continuă să meargă (unit variant); pentru `StopSequence` folosește `matches!` pattern.
+
+#### C. Orchestrator ⇌ Inference integration
+
+1. **`orchestrator/Cargo.toml`**: add `ybos-inference = { path = "../inference" }` (default features, no `local_llama` — orchestrator core uses trait, MockInference în tests).
+
+2. **`orchestrator/src/manifest.rs`** — extend `Capabilities`:
+```rust
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct Capabilities {
+    #[serde(default)]
+    pub net_domains: Vec<String>,
+    #[serde(default)]
+    pub fs_paths: Vec<PathBuf>,
+    #[serde(default)]
+    pub data_types: Vec<String>,
+    #[serde(default)]
+    pub data_user_prefs: AccessLevel,
+    #[serde(default)]
+    pub llm: bool,                          // NEW
+}
+```
+
+3. **`orchestrator/src/capability.rs`** — extend `Operation`:
+```rust
+pub enum Operation {
+    NetConnect(String),
+    FsRead(PathBuf),
+    FsWrite(PathBuf),
+    UserContextRead,
+    UserContextWrite,
+    LlmCall,                                // NEW
+}
+```
+   - `enforce` pentru `LlmCall`: returns `Ok` dacă `manifest.capabilities.llm == true`, altfel `Err(CapabilityDenied("LlmCall"))`.
+
+4. **`orchestrator/src/agent.rs`** — adăugă `AgentContext` + modifică Agent trait:
+```rust
+use std::sync::Arc;
+use ybos_inference::Inference;
+
+#[derive(Clone)]
+pub struct AgentContext {
+    pub inference: Arc<dyn Inference>,
+    // Future: pub memory: Arc<dyn Memory>, pub http: Arc<dyn HttpClient>, etc.
+}
+
+#[async_trait]
+pub trait Agent: Send + Sync {
+    fn manifest(&self) -> &Manifest;
+    async fn invoke(&self, call: AgentCall, ctx: &AgentContext) -> Result<AgentResponse>;
+}
+```
+   **BREAKING change** — all Agent implementors must update `invoke` signature.
+
+5. **`orchestrator/src/runtime.rs`** — thread `AgentContext` through:
+   - `InProcessRuntime::new(registry: Arc<AgentRegistry>, context: AgentContext)` — store context in struct
+   - `AgentRuntime::invoke(&self, handle, call) -> Result<AgentResponse>` păstrează semnătura, intern pasează `&self.context` la `agent.invoke(call, ctx)`
+   - Alternativ: change trait signature to accept `ctx: &AgentContext`; alegem pattern-ul mai puțin perturbator pentru caller.
+
+6. **`orchestrator/src/agents/hello.rs`** — demonstrate LLM use:
+   - Modify HelloAgent să aibă opțional `use_llm: bool` în constructor
+   - If `use_llm == true`, `invoke` apelează `ctx.inference.complete(...)` cu un prompt simplu și returnează rezultatul concatenat cu "hello from {name}"
+   - Manifestul cu `use_llm=true` declară `llm: true` în Capabilities
+   - Default constructor `new(name, manifest=None)` keeps `use_llm = false` (no Inference dependency at default)
+
+7. **`orchestrator/src/main.rs`** (binary):
+   - Construct `MockInference` ca placeholder default
+   - Build `AgentContext { inference: Arc::new(mock) }`
+   - Instantiate `InProcessRuntime::new(registry, ctx)`
+   - (Daemon loop rămâne minimal — ca în Y3)
+
+8. **`orchestrator/tests/end_to_end.rs`** — update + adăugă scenariu nou:
+   - Update existing test: pass `AgentContext` to runtime constructor
+   - New test `test_agent_with_llm_capability`:
+     - Build MockInference cu canned `"42"`
+     - HelloAgent cu `use_llm = true`, manifest declares `llm = true`
+     - Agent invoked → response contains both "hello from..." și "42"
+   - New test `test_agent_without_llm_capability_denied`:
+     - Use `capability::enforce(manifest, &Operation::LlmCall)` direct
+     - Manifest with `llm = false` returns `CapabilityDenied`
+     - Manifest with `llm = true` returns Ok
+
+#### D. CI
+
+- Existing jobs adapt:
+  - `Build & Test Workspace`: `cargo test --workspace --features ybos-l0/dev_test_init` rămâne; va testa și `ybos-proto`
+  - `Cross-compile l0 for Android`: rămâne `cross build -p ybos-l0 ...`; verifică că ybos-proto se cross-compilează corect ca dep tranzitivă a l0
+  - `Build & Test inference (mock)`: rămâne `cargo test -p ybos-inference`
+  - `LocalLlama smoke test`: rămâne
+  - `ShellCheck`: rămâne
+- No new CI jobs necesare în Y5 (toate testele acoperite de workspace job)
+- IMPORTANT: după extract `ybos-proto`, verifică că `Build & Test Workspace` runtime NU crește semnificativ (proto codegen e mecanic, nu duce mult timp)
+
+#### E. Documentation
+
+- NU update YBOSClaude.md, ARCHITECTURE.md, ROADMAP.md (out of scope — Lead Dev face dacă necesar în review post-merge)
+- `proto/README.md` (NEW, scurt): explică ce e ybos-proto, cum se folosește din alte crates
+- Update `inference/README.md` minor IF necessary pentru FinishReason payloads (probabil OK ca-i)
+
+### Acceptance criteria Y5
+
+- [ ] `proto/` workspace member creat, `cargo build -p ybos-proto` verde
+- [ ] `l0/proto/` și `orchestrator/proto/` directories ȘTERSE (proto-urile mutate în `proto/proto/`)
+- [ ] `l0/build.rs` și `orchestrator/build.rs` ȘTERSE sau goale (codegen acum în ybos-proto)
+- [ ] l0 + orchestrator consumă `ybos-proto` ca dep, ZERO `tonic-build` în build-deps
+- [ ] `cargo test --workspace --features ybos-l0/dev_test_init` verde (Y1 tests + Y3 tests + Y4 tests + Y5 new tests)
+- [ ] `LocalLlama::complete()` wrap-uit în `spawn_blocking` — verificabil prin code inspection (nu poate fi acoperit doar prin teste)
+- [ ] `FinishReason::StopSequence(String)` și `Error(String)` carry payloads — tests actualizate
+- [ ] `Capabilities.llm: bool` adăugat, `Operation::LlmCall` adăugat, enforce funcționează
+- [ ] `AgentContext { inference: Arc<dyn Inference> }` creat
+- [ ] `Agent::invoke(call, ctx)` BREAKING change aplicat consistent
+- [ ] HelloAgent cu `use_llm` opt actualizat
+- [ ] 2 noi teste end-to-end: agent cu LLM (mock) reușește; agent fără LLM capability primește `CapabilityDenied`
+- [ ] Zero modificări în `l0/src/main.rs`, `l0/src/identity/**` (L0 SACRED preserved)
+- [ ] Zero modificări în `docs/`, `YBOSClaude.md`, `README.md` root, `reference/`, `platform/`, `Cross.toml`
+- [ ] CI: all 5 jobs existing verzi după Y5 changes
+- [ ] `proto/README.md` documentează scopul crate-ului
+
+### Ce NU intra în Y5
+
+- LLM judge sub-agent (Privacy Firewall Layer 3) — Y9
+- Vector store integration — fază separată (Y6+)
+- Persistent agent memory — fază separată
+- Tool calling / function calling API — fază separată
+- Real RemoteAPI impl (Anthropic / OpenAI calls) — Y15 cloud burst activation
+- Streaming inference exposed via orchestrator gRPC API — Y5 doar wire-up trait-level
+- Process isolation (SubprocessRuntime impl real)
+- Capability path normalization — Y7 firewall hardening
+- Multi-agent collaboration (one agent calls another via L1 mediator) — fază separată
+
+---
+
+## Y6+ — Faze enumerate (detaliu TBD când ajungem)
+
+Doar headline-uri. Semne de întrebare doar unde **chiar afectează faza activă (Y5)**.
+
+- **Vector store** (sqlite-vec sau qdrant embedded) — pentru memorie semantică per-agent. Independent de Y5.
 - **Agent seed: Calendar** — primul agent end-to-end demo cu LLM tools (consumă Inference + Vector store).
 - **Agent seed: News Digest**.
-- **Privacy firewall Layer 1 (capabilities)** — Y3 livrat skeleton; Y7 hardenizează enforcement pe toate operațiile + audit log + UI.
+- **Privacy firewall Layer 1 (capabilities)** — Y3 + Y5 livrat schelet; Y7 hardenizează: path normalization, audit log, UI, enforcement pe toate operațiile.
 - **Privacy firewall Layer 2 (eBPF redactor)**.
-- **Privacy firewall Layer 3 (LLM judge)** — folosește Inference (un sub-model mic).
+- **Privacy firewall Layer 3 (LLM judge)** — folosește Inference (sub-model mic via orchestrator stack din Y5).
 - **Agent seed: Trip Planner**.
 - **Agent seed: Market Intel**.
 - **Agent seed: Learning Curator**.
-- **Agent Builder Framework** — template `agents/_template/` + LLM-assisted configurator (folosește Inference).
-- **User-Context Memory subsystem** — storage + sync + capability `data.user_prefs`.
+- **Agent Builder Framework** — template `agents/_template/` + LLM-assisted configurator (folosește Inference + AgentContext din Y5).
+- **User-Context Memory subsystem** — storage + sync + capability `data.user_prefs` (e deja declarat în Capabilities Y3; Y5 lasă AgentContext extensibil pentru a injecta și memory handle).
 - **Laptop Companion (Tauri)** — pairing QR/NFC + session crypto + task offload + cache sync.
 - **UI native YBOS mobile**.
 - **Cross-device extins** (multi-phone, tabletă) — post-MVP.
-- **Cloud burst activation** — v0.2+; activează RemoteAPI cu API key real, per-category opt-in user.
+- **Cloud burst activation** — v0.2+; activează RemoteAPI cu API key real.
 - **VM Mode (Tier 1) laptop** — Linux VM minim, GPU passthrough, SEV-SNP/TDX integration. Research, post-MVP.
-- **Split inference layer-by-layer** ❓ research item (vezi ARCHITECTURE.md §4.5). Independent.
+- **Split inference layer-by-layer** ❓ research item. Independent.
 - **SubprocessRuntime impl real** — pentru process isolation agenți.
 
 ---

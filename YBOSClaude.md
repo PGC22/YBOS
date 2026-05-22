@@ -321,12 +321,13 @@ Detaliat: vezi `docs/ROADMAP.md`. Sumar succint:
 | Y1 | L0 generalizare: identity per-user + API session token + onboarding scaffold | ✅ Done (PR #1) |
 | Y2 | AOSP build env + cross-compile ybos-l0 aarch64 + AOSP overlay scaffolds (device-agnostic) | ✅ Done (PR #2) |
 | Y2.b | Flash + boot verification | BLOCKED pe achiziție device |
-| Y3 | L1 orchestrator skeleton (hybrid trait+runtime) + L0 SessionService gRPC + Cargo workspace | ✅ Done (PR #3) |
-| Y4 | **LLM inference layer (skeleton + LocalLlama CPU via llama-cpp-2 + streaming, new `inference/` crate)** | **NEXT** |
+| Y3 | L1 orchestrator skeleton (hybrid trait+runtime) + L0 SessionService gRPC + Cargo workspace | ✅ Done (PR #3 + PR #4 cleanup) |
+| Y4 | LLM inference layer (skeleton + LocalLlama CPU via llama-cpp-2 + streaming, new `inference/` crate) | ✅ Done (PR #5) |
 | Y4.b | NPU acceleration (mlc-llm) + cross-compile aarch64 | BLOCKED pe device |
-| Y5+ | Orchestrator-Inference integration, vector store, agenți seed, firewall 3 layere, agent builder framework, user-context memory, laptop companion (Tauri + session pairing + task offload), UI native | TBD |
+| Y5 | **Orchestrator ⇌ Inference integration (AgentContext + llm capability) + ybos-proto extract + Y4 fixes** | **NEXT** |
+| Y6+ | Vector store, agenți seed, firewall 3 layere, agent builder framework, user-context memory, laptop companion (Tauri + session pairing + task offload), UI native | TBD |
 
-**Detaliile fazelor Y5+ sunt notate cu semne de întrebare în ROADMAP.md** doar acolo unde decizia afectează arhitectura sau implementarea din Y4. Restul = "TBD când ajungem".
+**Detaliile fazelor Y6+ sunt notate cu semne de întrebare în ROADMAP.md** doar acolo unde decizia afectează arhitectura sau implementarea din Y5. Restul = "TBD când ajungem".
 
 ---
 
