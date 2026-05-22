@@ -51,7 +51,7 @@
 
 **Known carry-overs**:
 - Proto duplicate compilation — **adresat în Y5 (`ybos-proto` extract)** ✅
-- Capability path normalization absent — adresat în Y7 firewall hardening
+- Capability path normalization absent — **adresat în Y7 firewall hardening**
 
 ---
 
@@ -67,9 +67,9 @@
 - `FinishReason::StopSequence/Error` fără payload — **adresat în Y5** ✅
 - `model_name` placeholder — **adresat în Y5 (GGUF metadata read)** ✅
 - Seed truncat la u32 (API constraint llama-cpp-2) — deferat, requires lib change
-- Context recreate per `complete()` call — deferat, optimization
+- Context recreate per `complete()` call — deferat, optimization (NU în Y7)
 - `Token.logprob: None` mereu — deferat
-- **Token text format inconsistency Mock vs LocalLlama** — **adresat în Y6**
+- Token text format inconsistency Mock vs LocalLlama — **adresat în Y6** ✅
 
 ---
 
@@ -87,272 +87,186 @@
 - End-to-end tests: agent cu LLM cap reușește; capability denies LlmCall fără declarație
 
 **Known carry-overs Y5**:
-- Token format Mock prefixează `" "` manual, LocalLlama emite raw cu spacing intrinsec — **adresat în Y6**
-- `[build-dependencies]` empty sections în l0/Cargo.toml + orchestrator/Cargo.toml — **adresat în Y6**
-- `proto/README.md` poate fi enrich-uit cu WHY și usage — **adresat în Y6**
-- Context pool optimization în LocalLlama — deferat
-- Mock stop sequence NU enforce — deferat (Mock e doar pentru teste, nu prod logic)
+- Token format Mock prefixează `" "` manual — **adresat în Y6** ✅
+- `[build-dependencies]` empty sections — **adresat în Y6** ✅
+- `proto/README.md` enrich — **adresat în Y6** ✅
+- Mock stop sequence NU enforce — deferat (Mock e doar pentru teste)
 
 ---
 
-## Y6 — Memory layer (vector store + embedder + orchestrator integration) ⭐ NEXT
+## Y6 — Memory layer (vector store + embedder + orchestrator integration) ✅ Done (PR #7 merged)
 
-> Decizii agreate (2026-05-22 sesiune Y6):
-> - **Vector store backend** = `sqlite-vec` (modern înlocuitor pentru sqlite-vss, mature, SQLite-based, embeddable).
-> - **Embedder real** = `fastembed` Rust crate (folosește ONNX Runtime + sentence-transformer models, mai ușor de gestionat decât llama-cpp-2 pentru embeddings). Mock embedder furnizat pentru teste.
-> - **Workspace location** = crate nou `memory/` (package `ybos-memory`).
-> - **Integration pattern** = identic cu Y5 inference: `AgentContext` extins, capability nouă, BREAKING dacă necesar.
-> - **Carry-overs Y4+Y5 incluse**: token format alignment + cosmetic cleanups (NU context pool optimization, deferat).
+- Crate nou `memory/` (ybos-memory)
+- `VectorStore` trait (insert/insert_batch/query_top_k/delete/count) + `Embedder` trait (embed/embed_batch/dimension/model_info)
+- Implementări:
+  - `MockVectorStore` (in-memory + cosine similarity linear scan)
+  - `SqliteVecStore` (rusqlite + sqlite-vec extension cu `sqlite3_auto_extension` registration via `Once`)
+  - `MockEmbedder` (SHA-256 chain deterministic)
+  - `FastEmbedEmbedder` (fastembed v4 + BGE-small-en-v1.5)
+- Orchestrator integration: `AgentContext.memory + embedder`, `Capabilities.memory: MemoryAccess` (None/Read/ReadWrite), `Operation::MemoryRead/MemoryWrite` enforce
+- HelloAgent `new_with_memory` cu demo round-trip
+- 5 end-to-end tests + 2 noi memory tests + token format alignment Y5 carry-over + cosmetic cleanups
 
-### Scope Y6
+**Known carry-overs Y6**:
+- `SqliteVecStore` query path: `Uuid::from_slice(...).unwrap()` și `serde_json::from_str(...).unwrap()` — **adresat în Y7**
+- `SqliteVecStore` score: `1.0 - distance` doc comment ambiguu (L2 vs cosine) — **adresat în Y7**
+- `MockVectorStore` `.unwrap()` pe RwLock (vs `.expect()`) — **adresat în Y7**
+- `MockEmbedder.model_name: "mock-bge-small"` misleading (e SHA hash, nu BGE) — **adresat în Y7**
+- `FastEmbedEmbedder` `model_name` param ignorat — **adresat în Y7**
+- `HelloAgent` memory flow embed-uiește textul de 2 ori (insert + query) — **adresat în Y7**
+- Metadata pre-filtering în VectorQuery — deferat
+- Cross-compile memory pentru aarch64-android — deferat (Y4.b family)
 
-#### A. Crate nou `memory/` (ybos-memory)
+---
 
-Layout:
-```
-memory/
-├── Cargo.toml                  # package = ybos-memory; features pentru embedder backends
-├── README.md                   # explică crate, features, how-to-run
-├── src/
-│   ├── lib.rs                  # public re-exports
-│   ├── trait_def.rs            # VectorStore + Embedder traits
-│   ├── types.rs                # VectorItem, VectorQuery, VectorMatch, MemoryError, etc.
-│   ├── mock_store.rs           # MockVectorStore (in-memory HashMap, linear KNN)
-│   ├── sqlite_vec_store.rs     # SqliteVecStore via sqlite-vec extension (feature `sqlite_vec`)
-│   ├── mock_embedder.rs        # MockEmbedder (deterministic hash → fake vector, default feature)
-│   └── fastembed_embedder.rs   # FastEmbedEmbedder via fastembed crate (feature `fastembed`)
-└── tests/
-    ├── mock_smoke.rs           # mock store + mock embedder, default features
-    └── fastembed_smoke.rs      # cfg-gated, descarcă model embedding, query real
-```
+## Y7 — Privacy Firewall Layer 1 hardening + carry-overs cleanup ⭐ NEXT
 
-#### B. Traits
+> Decizii agreate (2026-05-22 sesiune Y7):
+> - **Scope Y7** = hardening Layer 1 (path normalization + audit log) + bundle carry-overs Y6 (+ unele Y4/Y5/Y3) într-un singur PR coerent.
+> - **Path normalization** = crate extern `path-clean` (well-tested lexical normalizer cu `..` handling). NU duplicăm logica din `l0/src/identity/paths.rs::normalize_lexical` (L0 SACRED).
+> - **Audit log** = tracing structured events cu target `ybos.audit`, fields `agent`, `op`, `outcome`, `reason`. Allow = `tracing::info!`, Deny = `tracing::warn!`. Capturat în teste via `tracing-test` crate.
+> - **UI vizualizare capabilities** = deferat la fază UI dedicată (Y... când avem UI framework decis).
+> - **Enforcement consistent pe toate operațiile** = audit log îmbunătățește vizibilitatea, dar enforcement-ul per-op rămâne by-convention la agent (Rust nu suportă aspect-oriented). Documentat clar în comments + cookbook.
 
-```rust
-#[async_trait]
-pub trait VectorStore: Send + Sync {
-    async fn insert(&self, item: VectorItem) -> Result<VectorId, MemoryError>;
-    async fn insert_batch(&self, items: Vec<VectorItem>) -> Result<Vec<VectorId>, MemoryError>;
-    async fn query_top_k(&self, query: VectorQuery, k: usize) -> Result<Vec<VectorMatch>, MemoryError>;
-    async fn delete(&self, id: VectorId) -> Result<(), MemoryError>;
-    async fn count(&self) -> Result<usize, MemoryError>;
-}
+### Scope Y7
 
-#[async_trait]
-pub trait Embedder: Send + Sync {
-    async fn embed(&self, text: &str) -> Result<Vec<f32>, MemoryError>;
-    async fn embed_batch(&self, texts: Vec<String>) -> Result<Vec<Vec<f32>>, MemoryError>;
-    fn dimension(&self) -> usize;
-    fn model_info(&self) -> EmbedderInfo;
-}
+#### A. Privacy Firewall Layer 1 hardening (orchestrator)
 
-pub struct VectorItem {
-    pub embedding: Vec<f32>,
-    pub text: String,
-    pub metadata: serde_json::Value,
-}
+1. **Path normalization** în `orchestrator/src/capability.rs`:
+   - Dep nou: `path-clean = "1"` (cea mai recentă versiune stabilă pe crates.io)
+   - În arms-urile `FsRead(path)` și `FsWrite(path)` ale `enforce`:
+     - Normalize lexical requested `path` via `path_clean::clean(path)`
+     - Normalize lexical fiecare `declared_path` din `manifest.capabilities.fs_paths` similar
+     - Aplică `path.starts_with(declared)` PE versiunile normalizate
+   - Asigură că `..` resolves înainte de `starts_with` check
+   - Documentează în code comment WHY: prevent `FsRead("/data/agent/../../etc/passwd")` bypass
 
-pub struct VectorQuery {
-    pub embedding: Vec<f32>,
-    // future extensions: pre-filter prin metadata.
-}
-
-pub struct VectorMatch {
-    pub id: VectorId,
-    pub text: String,
-    pub metadata: serde_json::Value,
-    pub score: f32, // cosine similarity sau distance — documentat clar care
-}
-
-pub type VectorId = uuid::Uuid;
-
-pub struct EmbedderInfo {
-    pub backend: String,    // "mock" | "fastembed"
-    pub model_name: String,
-    pub dimension: usize,
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum MemoryError { /* Storage, InvalidEmbedding, NotFound, EmbedderError, ... */ }
-```
-
-#### C. Implementations
-
-1. **MockVectorStore** (default feature):
-   - In-memory `RwLock<HashMap<VectorId, VectorItem>>`
-   - `query_top_k`: linear scan, computes cosine similarity vs all stored, sort, take k. NU production grade, doar test.
-   - Useful pentru orchestrator tests without sqlite-vec dep.
-
-2. **SqliteVecStore** (feature `sqlite_vec`):
-   - `rusqlite` + `sqlite-vec` extension (loaded at connection setup)
-   - Table schema:
-     ```sql
-     CREATE TABLE IF NOT EXISTS memories (
-         id BLOB PRIMARY KEY,
-         text TEXT NOT NULL,
-         metadata TEXT NOT NULL,
-         embedding BLOB NOT NULL
+2. **Audit log** în `orchestrator/src/capability.rs`:
+   - Toate `enforce` calls emit tracing event structured:
+     ```rust
+     tracing::info!(
+         target: "ybos.audit",
+         agent = %manifest.name,
+         op = ?op,
+         outcome = "allow",
+         "Capability check"
      );
-     CREATE VIRTUAL TABLE IF NOT EXISTS memories_vec USING vec0(
-         embedding float[<DIM>]
+     // sau pe deny:
+     tracing::warn!(
+         target: "ybos.audit",
+         agent = %manifest.name,
+         op = ?op,
+         outcome = "deny",
+         reason = %reason,
+         "Capability check denied"
      );
      ```
-   - `query_top_k`: foloseste `vec_search` din sqlite-vec
-   - Embedding dimension fixat la load — orice insert cu dim diferită → eroare
-   - Path: file-based (constructor accept `&Path`) + in-memory option (`SqliteVecStore::in_memory(dim)`)
+   - `manifest.name` displayed (% format), `op` formated debug (? format)
+   - Niciun secret nu apare în log (`Operation::FsRead(path)` arată path-ul declarat — OK pentru audit, NU privacy leak)
 
-3. **MockEmbedder** (default feature):
-   - `embed(text)`: returneaz `Vec<f32>` deterministic din SHA-256 hash al textului, mapped to f32 range
-   - `dimension()`: configurat la `new(dim)`, default 384 (matches BGE-small)
-   - Pentru teste: două input identice → embedding identic; inputs diferite → embeddings diferite (predictably)
+3. **Test path normalization** în `orchestrator/tests/end_to_end.rs` (sau `orchestrator/tests/capability_hardening.rs` separate):
+   - Agent declară `fs_paths = ["/data/agent/"]`
+   - `enforce(manifest, FsRead("/data/agent/data.txt"))` → Ok
+   - `enforce(manifest, FsRead("/data/agent/../../etc/passwd"))` → Err (DENIED) ✅
+   - `enforce(manifest, FsRead("/data/agent/./sub/../file.txt"))` → Ok (resolves to `/data/agent/file.txt`)
+   - Cu declared `fs_paths = ["/data/agent/../sub/"]` → normalize → declared devine `/data/sub/`
 
-4. **FastEmbedEmbedder** (feature `fastembed`):
-   - Foloseste `fastembed` crate (cea mai recentă versiune stabilă)
-   - Default model: `BAAI/bge-small-en-v1.5` (384 dim, ~130MB ONNX download la prima rulare)
-   - Constructor: `FastEmbedEmbedder::load(model_name: Option<String>, cache_dir: Option<PathBuf>)`
-   - Async wrap peste fastembed's synchronous API (similar pattern cu LocalLlama: `spawn_blocking`)
+4. **Test audit log capture** (via `tracing-test` crate ca dev-dep):
+   - Add `tracing-test = "0.2"` în `[dev-dependencies]` orchestrator
+   - Test cu `#[traced_test]` decorator
+   - După `enforce()` allow → assert `logs_contain("outcome=\"allow\"")` (sau echivalent în formatul real tracing-test)
+   - După `enforce()` deny → assert `logs_contain("outcome=\"deny\"")` și conține `agent=...`
 
-#### D. Cargo features
+#### B. Carry-overs Y6 cleanup
 
-`memory/Cargo.toml`:
-```toml
-[features]
-default = ["mock_store", "mock_embedder"]
-mock_store = []
-mock_embedder = []
-sqlite_vec = ["dep:rusqlite", "dep:sqlite-vec"]
-fastembed = ["dep:fastembed"]
-```
+1. **`memory/src/sqlite_vec_store.rs`**:
+   - Înlocuiește `Uuid::from_slice(&id_bytes).unwrap()` cu `.map_err(|e| rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Blob, Box::new(e)))?` SAU `.map_err(|e| MemoryError::Storage(format!("invalid UUID in DB: {}", e)))?` (alegerea Jules pentru ce e mai compatibil cu closure de la query_map)
+   - Înlocuiește `serde_json::from_str(&metadata_str).unwrap()` similar (fallback la `serde_json::Value::Null` la eroare, SAU propagează ca Storage error)
+   - **Comment clarification** pe `score: 1.0 - distance`: explică în code comment că sqlite-vec returnează L2 distance, iar transformarea `1 - distance` produce un score "higher is better" care aproximează cosine similarity DOAR pentru embedding-uri unit-normalized (cum sunt BGE outputs). Pentru embeddings ne-normalizate, scor-ul poate fi negativ sau >1. Documentat.
 
-Heavy deps (`rusqlite`, `sqlite-vec`, `fastembed`) optional. Default feature set rămâne lightweight.
+2. **`memory/src/mock_store.rs`**:
+   - Înlocuiește toate `.unwrap()` pe RwLock cu `.expect("MockVectorStore: lock poisoned")` (descriptive messages, similar pattern Y3 follow-up)
 
-Workspace `Cargo.toml` adăugă `"memory"` la members. Adăugă în `workspace.dependencies`:
-```toml
-ybos-memory = { path = "memory" }
-```
+3. **`memory/src/mock_embedder.rs`**:
+   - Schimbă `model_name: "mock-bge-small"` în `model_name: "mock-deterministic-sha256"` (mai exact ce este)
 
-#### E. Orchestrator integration
+4. **`memory/src/fastembed_embedder.rs`**:
+   - Elimină param `model_name: Option<String>` din `FastEmbedEmbedder::load(...)` — currently silently ignored
+   - Simplifică semnătura: `pub fn load(cache_dir: Option<PathBuf>) -> Result<Self, MemoryError>`
+   - Update doc comment: "Currently locked to BAAI/bge-small-en-v1.5. Future versions may expose model selection."
+   - Update call sites (orchestrator/main.rs, memory/tests/fastembed_smoke.rs) — sau dacă nu există apeluri cu model_name explicit (probabil n-au), nu e modificare în consumatori
 
-1. **`orchestrator/Cargo.toml`**: add `ybos-memory = { workspace = true }`.
-
-2. **`orchestrator/src/agent.rs`**: extend `AgentContext`:
+5. **`orchestrator/src/agents/hello.rs`** — optimize memory flow:
+   - În `invoke` cu `text_to_remember.is_some()`: stochează embedding-ul în variabilă, reuse pentru query
    ```rust
-   #[derive(Clone)]
-   pub struct AgentContext {
-       pub inference: Arc<dyn Inference>,
-       pub memory: Arc<dyn VectorStore>,
-       pub embedder: Arc<dyn Embedder>,
-   }
-   ```
-   NU schimb signature `Agent::invoke` (rămâne `invoke(call, ctx)` — context-ul își crește înăuntru, nu trait-ul).
-
-3. **`orchestrator/src/manifest.rs`**: extend `Capabilities`:
-   ```rust
-   pub struct Capabilities {
-       // ... existing ...
-       #[serde(default)]
-       pub memory: MemoryAccess,   // NEW
-   }
-
-   #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
-   #[serde(rename_all = "snake_case")]
-   pub enum MemoryAccess {
-       #[default]
-       None,
-       Read,
-       ReadWrite,
-   }
+   let embedding = ctx.embedder.embed(text).await?;
+   ctx.memory.insert(VectorItem {
+       embedding: embedding.clone(), // sau direct fără clone dacă possible
+       text: text.clone(),
+       metadata: json!({"agent": self.manifest.name}),
+   }).await?;
+   // ... enforce read ...
+   // Reuse embedding pentru query (nu re-embed):
+   let matches = ctx.memory.query_top_k(
+       VectorQuery { embedding },
+       1,
+   ).await?;
    ```
 
-4. **`orchestrator/src/capability.rs`**: extend `Operation`:
-   ```rust
-   pub enum Operation {
-       // ... existing ...
-       MemoryRead,
-       MemoryWrite,
-   }
-   ```
-   `enforce`: MemoryRead → cere `MemoryAccess::Read` sau `ReadWrite`; MemoryWrite → cere `ReadWrite`.
+### Acceptance criteria Y7
 
-5. **`orchestrator/src/main.rs`**: instantiate MockVectorStore + MockEmbedder default; wrap in `AgentContext`.
-
-6. **`orchestrator/src/agents/hello.rs`**: extend HelloAgent cu opțional `use_memory` constructor:
-   - `HelloAgent::new_with_memory(name, text_to_remember)`
-   - In `invoke`: dacă `use_memory`, enforce `MemoryRead` + `MemoryWrite`, embed `text_to_remember`, insert în store, query top_k(1) cu același text, return matched text înapoi. Demonstrează round-trip.
-
-7. **`orchestrator/tests/end_to_end.rs`** — adaugă scenarii noi:
-   - `test_agent_with_memory_capability`: HelloAgent cu memory + Mock store/embedder → insert + query → verifică round-trip
-   - `test_capability_denies_memory_without_declaration`: similar cu LlmCall pattern
-
-#### F. CI updates
-
-- **Existing jobs**: rămân verzi cu memory crate adăugat (default features lightweight, nu compile fastembed/sqlite-vec by default)
-- **New job** `Build & Test memory (mock)`: `cargo test -p ybos-memory` — default features, fast
-- **New job** `Memory smoke test (fastembed)`: `cargo test -p ybos-memory --features fastembed,sqlite_vec` — cu cache pentru ONNX model
-  - Install dependencies: nimic specific (fastembed are ort bundled — verifică Jules)
-  - Cache `target/test-models/` (deja există pentru llama)
-- **Cross-compile**: rămâne `cross build -p ybos-l0` — memory NU intră în cross-compile Y6 (deferat similar cu inference)
-
-#### G. Carry-over flag fixes incluse în Y6
-
-1. **Token format alignment Mock ⇌ LocalLlama**:
-   - `inference/src/mock.rs`: drop manual `" "` prefix la subsequent tokens. Emit raw word (fără leading space).
-   - Mock-ul devine consumer-side responsibility de a concatena cu `join("")` sau cu `join(" ")` — alegerea e clară din context.
-   - Update `inference/tests/mock_smoke.rs`: schimbă `tokens.join(" ")` în `tokens.join("")` și ajustează assert string ("four five six" → "fourfivesix"? sau folosește newline-separated mock responses?).
-   - Alternativă mai curată: configurabil — mock primește un separator în constructor: `MockInference::new_with_separator(responses, separator)`. Default `" "` pentru backward compat. NU recomandat pentru Y6 — adaugă API, mai bine fix bug semantic.
-   - **Decizie**: emit raw tokens consistent (LocalLlama style); consumer (test sau real) concatenează cu `""`. Update mock_smoke.rs assertions.
-
-2. **Empty `[build-dependencies]` cleanup**:
-   - `l0/Cargo.toml` și `orchestrator/Cargo.toml`: șterge complet sectiunea `[build-dependencies]` (e empty după Y5)
-
-3. **`proto/README.md` enrich**:
-   - Adaugă paragraf "Why this crate exists" (avoid duplicate compilation across consumer crates)
-   - Adaugă "Consumers" section listing l0 + orchestrator (+ future ones)
-
-### Acceptance criteria Y6
-
-- [ ] `memory/` workspace member creat, `cargo build -p ybos-memory` verde
-- [ ] `cargo test --workspace --features ybos-l0/dev_test_init` verde (toate testele anterioare + memory mock tests + 2 noi end-to-end orchestrator tests)
-- [ ] `cargo test -p ybos-memory --features fastembed,sqlite_vec` verde în CI (cu cache model)
-- [ ] VectorStore trait + MockVectorStore + SqliteVecStore (cfg-gated) implementate
-- [ ] Embedder trait + MockEmbedder + FastEmbedEmbedder (cfg-gated) implementate
-- [ ] `AgentContext` extins cu `memory` + `embedder`
-- [ ] `Capabilities.memory: MemoryAccess` enum (None/Read/ReadWrite) + `Operation::MemoryRead`/`MemoryWrite` + enforce
-- [ ] HelloAgent cu `new_with_memory` constructor + demo round-trip
-- [ ] 2 noi end-to-end tests: agent cu memory cap reușește; capability denies fără declarație
-- [ ] Carry-overs Y4+Y5 incluse: token format Mock alignment, `[build-dependencies]` cleanup, proto/README enrich
+- [ ] `path-clean` dep adăugat în orchestrator/Cargo.toml
+- [ ] `capability::enforce` normalizes `FsRead`/`FsWrite` paths și fs_paths declared via `path_clean::clean`
+- [ ] `..` bypass test: declared `/data/agent/`, requested `/data/agent/../../etc/passwd` → DENY
+- [ ] Audit log: toate enforce() calls emit tracing event cu target `ybos.audit`, fields `agent`, `op`, `outcome`, optional `reason`
+- [ ] `tracing-test` dep adăugat în [dev-dependencies] orchestrator
+- [ ] Test audit log capture: assert logs after allow + after deny
+- [ ] Y6 carry-overs:
+  - [ ] `SqliteVecStore` unwraps în query path eliminate (propagate as MemoryError)
+  - [ ] `SqliteVecStore` score doc comment clarifică L2 vs cosine
+  - [ ] `MockVectorStore` `.unwrap()` → `.expect()` messages descriptive
+  - [ ] `MockEmbedder.model_name` cosmetic update
+  - [ ] `FastEmbedEmbedder::load` simplified signature (drop model_name param)
+  - [ ] `HelloAgent` memory flow embed-uiește o singură dată (reuse pentru query)
 - [ ] Zero modificări în `l0/src/main.rs`, `l0/src/identity/**` (L0 SACRED preserved)
 - [ ] Zero modificări în `docs/`, `YBOSClaude.md`, `README.md` root, `reference/`, `platform/`, `Cross.toml`
-- [ ] All 5 existing CI jobs verzi + 2 jobs noi (memory mock + memory fastembed)
-- [ ] `memory/README.md` documentează crate + features + how-to-run
+- [ ] Zero modificări în `l0/src/grpc/**`, `l0/src/{lib,hw,bus,reflex}/**`
+- [ ] Zero modificări în `proto/**`
+- [ ] Zero modificări în `inference/**` (NU touch Y4 deliverables; Y6 deja a abordat token format)
+- [ ] Zero modificări în `memory/src/{lib,trait_def,types}.rs` (Y6 deliverables; doar `mock_store.rs`, `sqlite_vec_store.rs`, `mock_embedder.rs`, `fastembed_embedder.rs` modificate)
+- [ ] `cargo test --workspace --features ybos-l0/dev_test_init` verde
+- [ ] All 7 existing CI jobs verzi (no new jobs needed)
 
-### Ce NU intra în Y6
+### Ce NU intra în Y7
 
-- Real production use în agenți seed (Calendar / News) — Y7+
-- Context pool optimization în LocalLlama — deferat
-- Capability path normalization — Y7 firewall hardening
-- User-Context Memory subsystem (preferințe persistente, recurrențe) — separat, va folosi memory crate intern
-- Cross-compile memory pentru aarch64-android — deferat (mlc-llm/NPU = Y4.b family)
-- Metadata pre-filtering în VectorQuery — Y6 doar embedding-based; metadata filtering ulterior
+- News Digest agent (primul seed agent) — fază următoare
+- Calendar agent — fază următoare
+- User-Context Memory subsystem — fază separată
+- UI vizualizare capabilities — depinde de UI framework, fază UI dedicată
+- Privacy Firewall Layer 2 (eBPF redactor) — kernel-level, blocked pe Linux dev env
+- Privacy Firewall Layer 3 (LLM judge) — fază separată
+- Agent Builder Framework — fază separată
+- Capability enforce auto-applied pe toate ops (aspect-oriented) — Rust nu suportă cleanly; rămâne by-convention
+- Context pool optimization LocalLlama — deferat
+- Metadata pre-filtering în VectorQuery — deferat
 
 ---
 
-## Y7+ — Faze enumerate (detaliu TBD când ajungem)
+## Y8+ — Faze enumerate (detaliu TBD când ajungem)
 
-Doar headline-uri. Semne de întrebare doar unde **chiar afectează faza activă (Y6)**.
+Doar headline-uri. Semne de întrebare doar unde **chiar afectează faza activă (Y7)**.
 
-- **Agent seed: News Digest** — primul agent end-to-end cu LLM + Vector store (folosește Y4 + Y6).
+- **Agent seed: News Digest** — primul agent end-to-end cu LLM + Vector store. Folosește Y4 + Y6 + Y7 (capability enforcement hardenized).
 - **Agent seed: Calendar** — Google Calendar OAuth + LLM tool calling.
-- **Privacy firewall Layer 1 hardenizare** (Y7): path normalization (FsRead/FsWrite cu `..` bypass), audit log, UI vizualizare capabilities, enforcement consistent pe toate operațiile.
-- **Privacy firewall Layer 2 (eBPF redactor)**.
+- **User-Context Memory subsystem** — storage + sync, va folosi memory crate Y6 ca backend; capability `data.user_prefs` deja declarată în Y3.
+- **Privacy firewall Layer 2 (eBPF redactor)** — kernel-level, blocked pe Linux dev env.
 - **Privacy firewall Layer 3 (LLM judge)** — folosește Inference stack.
 - **Agent seed: Trip Planner**.
 - **Agent seed: Market Intel**.
 - **Agent seed: Learning Curator**.
 - **Agent Builder Framework** — template + LLM-assisted configurator (folosește Inference + AgentContext + Memory).
-- **User-Context Memory subsystem** — storage + sync, va folosi memory crate Y6 ca backend.
 - **Laptop Companion (Tauri)** — pairing QR/NFC + session crypto + task offload.
-- **UI native YBOS mobile**.
+- **UI native YBOS mobile** — launcher, onboarding wizard, agent dashboards, capability visualization (audit log viewer).
 - **Cross-device extins** — post-MVP.
 - **Cloud burst activation** — v0.2+; activează RemoteAPI cu API key real.
 - **VM Mode (Tier 1) laptop** — research, post-MVP.
