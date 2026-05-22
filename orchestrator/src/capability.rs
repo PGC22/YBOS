@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Result};
 use std::path::PathBuf;
-use crate::manifest::{Manifest, AccessLevel};
+use crate::manifest::{Manifest, AccessLevel, MemoryAccess};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -17,6 +17,8 @@ pub enum Operation {
     UserContextRead,
     UserContextWrite,
     LlmCall,
+    MemoryRead,
+    MemoryWrite,
 }
 
 pub fn enforce(manifest: &Manifest, op: &Operation) -> Result<()> {
@@ -62,6 +64,21 @@ pub fn enforce(manifest: &Manifest, op: &Operation) -> Result<()> {
                 Ok(())
             } else {
                 Err(anyhow!(CapabilityError::Denied("LlmCall".to_string())))
+            }
+        }
+        Operation::MemoryRead => {
+            if manifest.capabilities.memory == MemoryAccess::Read ||
+               manifest.capabilities.memory == MemoryAccess::ReadWrite {
+                Ok(())
+            } else {
+                Err(anyhow!(CapabilityError::Denied("MemoryRead".to_string())))
+            }
+        }
+        Operation::MemoryWrite => {
+            if manifest.capabilities.memory == MemoryAccess::ReadWrite {
+                Ok(())
+            } else {
+                Err(anyhow!(CapabilityError::Denied("MemoryWrite".to_string())))
             }
         }
     }

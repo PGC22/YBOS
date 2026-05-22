@@ -69,7 +69,9 @@ impl Inference for MockInference {
                 if i >= max_tokens {
                     break;
                 }
-                let token_text = if i == 0 { word } else { format!(" {}", word) };
+                // Y6 fix: drop manual " " prefix on subsequent tokens.
+                // Patterns matches LocalLlama which emits raw tokenizer output.
+                let token_text = word;
                 if tx.send(Ok(Token { text: token_text, logprob: None })).await.is_err() {
                     break;
                 }

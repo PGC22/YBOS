@@ -6,6 +6,7 @@ use ybos_orchestrator::registry::AgentRegistry;
 use ybos_orchestrator::runtime::InProcessRuntime;
 use ybos_inference::mock::MockInference;
 use ybos_inference::Inference;
+use ybos_memory::{MockVectorStore, MockEmbedder, VectorStore, Embedder};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -13,7 +14,9 @@ async fn main() -> Result<()> {
     info!("YBOS Orchestrator starting...");
 
     let inference: Arc<dyn Inference> = Arc::new(MockInference::new(vec!["42".to_string()]));
-    let context = AgentContext { inference };
+    let memory: Arc<dyn VectorStore> = Arc::new(MockVectorStore::new());
+    let embedder: Arc<dyn Embedder> = Arc::new(MockEmbedder::new(384));
+    let context = AgentContext { inference, memory, embedder };
 
     let registry = Arc::new(AgentRegistry::new());
     let _runtime = InProcessRuntime::new(registry, context);

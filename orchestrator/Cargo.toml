@@ -20,8 +20,7 @@ uuid = { version = "1", features = ["v4", "serde"] }
 toml = "0.8"
 async-trait = "0.1"
 ybos-inference = { path = "../inference" }
-
-[build-dependencies]
+ybos-memory = { workspace = true }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt", "test-util"] }
