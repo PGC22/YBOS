@@ -1,0 +1,29 @@
+[package]
+name = "ybos-orchestrator"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tonic = { workspace = true }
+prost = { workspace = true }
+hex = { workspace = true }
+sha2 = { workspace = true }
+uuid = { version = "1", features = ["v4", "serde"] }
+toml = "0.8"
+async-trait = "0.1"
+tokio-stream = { version = "0.1", features = ["net"] }
+
+[build-dependencies]
+tonic-build = "0.12"
+protoc-bin-vendored = "3"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt", "test-util"] }
+ybos-l0 = { path = "../l0", features = ["dev_test_init"] }

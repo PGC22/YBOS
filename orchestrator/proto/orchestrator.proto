@@ -1,0 +1,39 @@
+syntax = "proto3";
+package ybos.orchestrator.v1;
+
+service OrchestratorService {
+  rpc RegisterAgent(RegisterAgentRequest) returns (RegisterAgentResponse);
+  rpc ListAgents(ListAgentsRequest) returns (ListAgentsResponse);
+  rpc InvokeAgent(InvokeAgentRequest) returns (InvokeAgentResponse);
+}
+
+message RegisterAgentRequest {
+  string manifest_toml = 1;
+}
+
+message RegisterAgentResponse {
+  bool success = 1;
+  string error = 2;
+}
+
+message ListAgentsRequest {}
+
+message ListAgentsResponse {
+  repeated AgentManifest agents = 1;
+}
+
+message AgentManifest {
+  string name = 1;
+  string version = 2;
+}
+
+message InvokeAgentRequest {
+  string agent_name = 1;
+  string method = 2;
+  bytes payload = 3;
+}
+
+message InvokeAgentResponse {
+  bytes payload = 1;
+  string error = 2;
+}
