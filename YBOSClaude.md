@@ -324,10 +324,11 @@ Detaliat: vezi `docs/ROADMAP.md`. Sumar succint:
 | Y3 | L1 orchestrator skeleton (hybrid trait+runtime) + L0 SessionService gRPC + Cargo workspace | ✅ Done (PR #3 + PR #4 cleanup) |
 | Y4 | LLM inference layer (skeleton + LocalLlama CPU via llama-cpp-2 + streaming, new `inference/` crate) | ✅ Done (PR #5) |
 | Y4.b | NPU acceleration (mlc-llm) + cross-compile aarch64 | BLOCKED pe device |
-| Y5 | **Orchestrator ⇌ Inference integration (AgentContext + llm capability) + ybos-proto extract + Y4 fixes** | **NEXT** |
-| Y6+ | Vector store, agenți seed, firewall 3 layere, agent builder framework, user-context memory, laptop companion (Tauri + session pairing + task offload), UI native | TBD |
+| Y5 | Orchestrator ⇌ Inference integration (AgentContext + llm capability) + ybos-proto extract + Y4 fixes | ✅ Done (PR #6) |
+| Y6 | **Memory layer: VectorStore + Embedder traits, sqlite-vec store, fastembed embedder, orchestrator integration** | **NEXT** |
+| Y7+ | Agenți seed (News, Calendar), firewall Layer 1 hardening + 2/3, agent builder framework, user-context memory, laptop companion (Tauri), UI native | TBD |
 
-**Detaliile fazelor Y6+ sunt notate cu semne de întrebare în ROADMAP.md** doar acolo unde decizia afectează arhitectura sau implementarea din Y5. Restul = "TBD când ajungem".
+**Detaliile fazelor Y7+ sunt notate cu semne de întrebare în ROADMAP.md** doar acolo unde decizia afectează arhitectura sau implementarea din Y6. Restul = "TBD când ajungem".
 
 ---
 
