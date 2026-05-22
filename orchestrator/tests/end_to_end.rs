@@ -10,8 +10,9 @@ use ybos_orchestrator::runtime::{InProcessRuntime, AgentRuntime};
 use ybos_orchestrator::agent::{Agent, AgentCall, AgentContext};
 use ybos_orchestrator::agents::hello::HelloAgent;
 use ybos_orchestrator::capability::{enforce, Operation};
-use ybos_orchestrator::manifest::Manifest;
+use ybos_orchestrator::manifest::{Manifest, MemoryAccess};
 use ybos_inference::mock::MockInference;
+use ybos_memory::{MockVectorStore, MockEmbedder};
 use ybos_l0::identity::session;
 use ybos_l0::identity::envelope::MasterKey;
 use ybos_l0::grpc::pb::session_service_server::SessionServiceServer;
@@ -72,7 +73,9 @@ net_domains = ["example.com"]
 
     // 6. Invoke hello and assert the response.
     let inference: Arc<dyn ybos_inference::Inference> = Arc::new(MockInference::new(vec!["42".to_string()]));
-    let context = AgentContext { inference };
+    let memory = Arc::new(MockVectorStore::new());
+    let embedder = Arc::new(MockEmbedder::new(8));
+    let context = AgentContext { inference, memory, embedder };
     let runtime = InProcessRuntime::new(registry.clone(), context);
     let handle = runtime.spawn(hello.manifest().clone()).await.expect("Failed to spawn hello agent");
     let resp = runtime.invoke(&handle, AgentCall {
@@ -100,7 +103,9 @@ async fn test_agent_with_llm_capability() {
     registry.register_static(hello_llm.clone());
 
     let inference = Arc::new(MockInference::new(vec!["42".to_string()]));
-    let context = AgentContext { inference };
+    let memory = Arc::new(MockVectorStore::new());
+    let embedder = Arc::new(MockEmbedder::new(8));
+    let context = AgentContext { inference, memory, embedder };
     let runtime = InProcessRuntime::new(registry, context);
 
     let handle = runtime
@@ -145,4 +150,77 @@ async fn test_capability_denies_llm_without_declaration() {
         },
     };
     enforce(&manifest_with_llm, &Operation::LlmCall).expect("Should allow LlmCall");
+}
+
+#[tokio::test]
+async fn test_agent_with_memory_capability() {
+    let registry = Arc::new(AgentRegistry::new());
+    let hello_mem = Arc::new(HelloAgent::new_with_memory("mem-hello", "the meaning of life is 42"));
+    registry.register_static(hello_mem.clone());
+
+    let inference = Arc::new(MockInference::new(vec!["42".to_string()]));
+    let memory = Arc::new(MockVectorStore::new());
+    let embedder = Arc::new(MockEmbedder::new(8));
+    let context = AgentContext { inference, memory, embedder };
+    let runtime = InProcessRuntime::new(registry, context);
+
+    let handle = runtime
+        .spawn(hello_mem.manifest().clone())
+        .await
+        .expect("Failed to spawn mem-hello agent");
+
+    let resp = runtime
+        .invoke(
+            &handle,
+            AgentCall {
+                method: "test".to_string(),
+                payload: vec![],
+            },
+        )
+        .await
+        .expect("Failed to invoke mem-hello agent");
+
+    let response_text = String::from_utf8_lossy(&resp.payload);
+    assert!(response_text.contains("hello from mem-hello"));
+    assert!(response_text.contains("remembered the meaning of life is 42"));
+}
+
+#[tokio::test]
+async fn test_capability_denies_memory_without_declaration() {
+    let manifest = Manifest {
+        name: "test-agent".to_string(),
+        version: "0.1.0".to_string(),
+        capabilities: Default::default(), // memory = None
+    };
+
+    let err_read = enforce(&manifest, &Operation::MemoryRead).unwrap_err();
+    assert!(err_read.to_string().contains("MemoryRead"));
+
+    let err_write = enforce(&manifest, &Operation::MemoryWrite).unwrap_err();
+    assert!(err_write.to_string().contains("MemoryWrite"));
+
+    // Read access
+    let manifest_read = Manifest {
+        name: "test-agent".to_string(),
+        version: "0.1.0".to_string(),
+        capabilities: ybos_orchestrator::manifest::Capabilities {
+            memory: MemoryAccess::Read,
+            ..Default::default()
+        },
+    };
+    enforce(&manifest_read, &Operation::MemoryRead).expect("Should allow MemoryRead");
+    let err_write = enforce(&manifest_read, &Operation::MemoryWrite).unwrap_err();
+    assert!(err_write.to_string().contains("MemoryWrite"));
+
+    // ReadWrite access
+    let manifest_rw = Manifest {
+        name: "test-agent".to_string(),
+        version: "0.1.0".to_string(),
+        capabilities: ybos_orchestrator::manifest::Capabilities {
+            memory: MemoryAccess::ReadWrite,
+            ..Default::default()
+        },
+    };
+    enforce(&manifest_rw, &Operation::MemoryRead).expect("Should allow MemoryRead");
+    enforce(&manifest_rw, &Operation::MemoryWrite).expect("Should allow MemoryWrite");
 }

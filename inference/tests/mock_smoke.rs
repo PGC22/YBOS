@@ -44,10 +44,13 @@ async fn test_mock_complete_stream() {
     let mut stream = mock.complete_stream(req).await.unwrap();
     let mut tokens = Vec::new();
     while let Some(res) = stream.next().await {
-        tokens.push(res.unwrap().text.trim().to_string());
+        tokens.push(res.unwrap().text);
     }
 
-    assert_eq!(tokens.join(" "), "four five six");
+    // Y6: Mock now emits raw words without space prefix.
+    // Concatenating with empty string matches new behavior.
+    // Assertion changes from "four five six" (space-joined) to "fourfivesix" (raw concatenation).
+    assert_eq!(tokens.join(""), "fourfivesix");
 }
 
 #[tokio::test]

@@ -37,7 +37,7 @@ out/
 
 # Local data
 data/
-memory/
+# memory/  <-- This conflicts with the memory crate.
 *.db
 *.db-journal
 

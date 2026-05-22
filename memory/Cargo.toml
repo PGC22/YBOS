@@ -1,0 +1,31 @@
+[package]
+name = "ybos-memory"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+async-trait = "0.1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+uuid = { version = "1", features = ["v4", "serde"] }
+thiserror = "1"
+tokio = { workspace = true }
+tracing = { workspace = true }
+futures = "0.3"
+
+# Optional dependencies
+rusqlite = { version = "0.32", features = ["bundled"], optional = true }
+sqlite-vec = { version = "0.1.0-alpha.4", optional = true }
+fastembed = { version = "4", optional = true }
+sha2 = { workspace = true, optional = true }
+bytemuck = { version = "1.15", optional = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["full"] }
+
+[features]
+default = ["mock_store", "mock_embedder"]
+mock_store = []
+mock_embedder = ["dep:sha2"]
+sqlite_vec = ["dep:rusqlite", "dep:sqlite-vec", "dep:bytemuck"]
+fastembed = ["dep:fastembed"]

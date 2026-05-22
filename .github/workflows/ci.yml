@@ -66,6 +66,32 @@ jobs:
         run: cargo test -p ybos-inference --features local_llama
         timeout-minutes: 20
 
+  memory_mock:
+    name: Build & Test memory (mock)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Run memory tests (mock)
+        run: cargo test -p ybos-memory
+
+  memory_fastembed:
+    name: Memory smoke test (fastembed)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache test models
+        uses: actions/cache@v4
+        with:
+          path: target/test-models/
+          key: ${{ runner.os }}-test-models-fastembed-v1.0
+      - name: Run memory smoke test
+        run: cargo test -p ybos-memory --features fastembed,sqlite_vec
+        timeout-minutes: 15
+
   shellcheck:
     name: ShellCheck
     runs-on: ubuntu-latest
