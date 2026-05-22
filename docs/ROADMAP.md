@@ -30,85 +30,25 @@
 
 ---
 
-## Y2 — Build environment + cross-compile + AOSP customization scaffolding ⭐ NEXT
+## Y2 — Build environment + cross-compile + AOSP customization scaffolding ✅ Done (PR #2 merged)
 
-> **Constrângere cunoscută**: device-ul fizic nu e încă achiziționat. Y2 livrează TOT ce se poate face *fără device fizic*. Verificarea finală end-to-end (Y2.b: flash + boot) e blocată pe achiziție device și o execută George manual când ajunge.
+- AOSP build host setup script (Ubuntu 22.04 LTS), shellcheck-clean, idempotent
+- AOSP source sync workflow + custom manifest scaffold (`ybos-aosp.xml`)
+- Cross-compile `ybos-l0` pentru `aarch64-linux-android` via `cross` crate cu `Cross.toml` (image `:edge` cu NDK modern); CI verifică binary ELF aarch64
+- AOSP overlay device-agnostic: `BoardConfigCommon.mk`, `system.prop` (cu disclaimer dev-only pe ADB/verity), `init.ybos.rc` (service ybos-l0 cu capabilities documentate), SELinux policy `ybos_l0.te`
+- `apply_overlay.sh` cu backup option
+- `FLASH_PROCEDURE.md` generic ARM64 cu secțiuni per-OEM marcate "[verificat când achiziționăm X]"
+- CI: `Build & Test l0`, `Cross-compile l0 for Android`, `ShellCheck` toate verzi
 
-### Scope Y2 (device-agnostic prep)
-
-1. **AOSP build host preparation — scripts + documentation, NOT executed în CI**
-   - `platform/build_host/setup_ubuntu.sh` — script Bash pentru Ubuntu 22.04 LTS care instalează prerequisites (JDK 11/17, repo tool, build-essential, ccache, git-lfs, etc.) conform AOSP official docs
-   - `platform/build_host/README.md` — documentație clară: minim 32GB RAM / 200GB disk / octa-core CPU, recomandare cloud VM (Hetzner CCX33 / AWS c6i.4xlarge / Azure equivalent) pentru build session
-   - Script idempotent: rulat de 2x nu strică nimic
-   - NU se rulează în CI YBOS (timpii / resursele sunt prohibitive); doar verificare lexicală (shellcheck în CI dacă pus)
-
-2. **AOSP source sync workflow**
-   - `platform/manifests/ybos-aosp.xml` — manifest custom care extinde android-14.0.0_r1 (sau ultima stabilă) cu remote-uri proprii YBOS pentru orice fork de proiecte AOSP (gol la început, dar structura pregătită)
-   - `platform/sync_aosp.sh` — script `repo init -u ... -m ybos-aosp.xml && repo sync -c -j$(nproc)`
-   - Documentație: paths recomandate (`~/aosp-ybos/`), disk usage estimat (~150GB după sync), cum se actualizează (`repo sync` incremental)
-
-3. **Cross-compile ybos-l0 pentru aarch64-linux-android**
-   - Update `l0/Cargo.toml` cu profile-uri și target config (`[target.aarch64-linux-android]` linker / ar / etc.)
-   - `l0/.cargo/config.toml` (NEW) — linker setup folosind NDK toolchain (cale parametrizată via env var `ANDROID_NDK_HOME`)
-   - `l0/build_android.sh` — script wrapper care:
-     - Verifică `ANDROID_NDK_HOME` setat
-     - Rulează `rustup target add aarch64-linux-android` dacă lipsește
-     - `cargo build --release --target aarch64-linux-android`
-     - Output binary path printat la final
-   - Update `l0/README.md` cu secțiune "Cross-compile aarch64" + how-to
-   - CI YBOS adaugă job `cross_compile_android` care rulează build-ul (necesită NDK în CI image — alternativ, dacă NDK nu e disponibil în GitHub Actions out-of-box, folosim `cross` crate ca fallback)
-   - Test minimal: cargo build target aarch64-linux-android trece, binary produs e ELF aarch64 (verificat cu `file`)
-
-4. **AOSP customization scaffolding (DEVICE-AGNOSTIC)**
-   - `platform/aosp_overlay/` — director cu fișiere care vor fi suprascrise peste source AOSP după sync:
-     - `device/ybos/common/BoardConfigCommon.mk` — placeholder cu comentariu "device-specific board config in Y2.b"
-     - `device/ybos/common/system.prop` — set `ro.product.brand=YBOS`, `ro.product.manufacturer=YBOS`, `ro.product.model=YBOS-DEV`
-     - `device/ybos/common/init.ybos.rc` — init script care:
-       - Creează `/data/ybos/` cu owner/group și SELinux context
-       - Pornește serviciul `ybos-l0` ca user `ybos` (definit nou) cu capabilities limitate
-       - Restart-on-crash policy
-     - `device/ybos/common/sepolicy/ybos_l0.te` — SELinux policy fragment pentru ybos-l0 daemon (allow hwmon read, ACPI read, MQTT bind localhost, gRPC bind localhost; deny rest)
-   - `platform/aosp_overlay/apply_overlay.sh` — script care copie overlay-ul peste AOSP source tree (cu backup + restore option)
-   - DOCUMENTAȚIE clară: aceste fișiere sunt scaffolds; finalizarea lor (board-specific paths, kernel config) e Y2.b post-device.
-
-5. **Flash procedure documentation (Y2.b prep)**
-   - `platform/FLASH_PROCEDURE.md` — checklist + comenzi pentru când vine device-ul:
-     - Unlock bootloader (comenzi generic ARM64 + variante per OEM: Pixel, OnePlus, Fairphone)
-     - Build YBOS image (`m otapackage` sau echivalent)
-     - Flash via fastboot
-     - Smoke test boot: `adb shell` + verificare ybos-l0 daemon rulează
-   - Documentația e generic-ARM64; secțiunile per-OEM marcate clar cu "[verificat când achiziționăm modelul X]"
-
-6. **Tests + CI**
-   - `cargo build --target aarch64-linux-android` rulează în CI (job separat)
-   - `shellcheck` pe toate scriptele bash din `platform/`
-   - `cargo build && cargo test` pe l0/ rămân verzi (zero regression)
-   - Nu testăm AOSP build în CI (timpii / resurse imposibile)
-
-### Acceptance criteria Y2
-
-- [ ] `platform/build_host/setup_ubuntu.sh` există, e idempotent, shellcheck-clean
-- [ ] `platform/sync_aosp.sh` + manifest `ybos-aosp.xml` există + README
-- [ ] `cargo build --release --target aarch64-linux-android` reușește local (verifică George manual)
-- [ ] `l0/build_android.sh` funcțional, documentat
-- [ ] `platform/aosp_overlay/` cu toate fișierele scaffolds + apply script
-- [ ] `platform/FLASH_PROCEDURE.md` complet pentru cazul generic ARM64
-- [ ] Zero modificări în `l0/src/` care nu țin de cross-compile config
-- [ ] Zero modificări în docs/* sau YBOSClaude.md
-- [ ] CI pass (cargo build + cargo test + cross-compile job + shellcheck)
-
-### Ce NU intra în Y2
-
-- Flash pe device fizic (Y2.b — blocked pe achiziție device)
-- Boot verification end-to-end (Y2.b)
-- Device-specific kernel config / drivers
-- HAL bindings device-specific
-- Decizia OS-ului host (Ubuntu vs alta) — fixat pe Ubuntu 22.04 LTS (cea mai universal suportată pentru AOSP build)
-- L1 orchestrator integration (fază separată)
+**Known carry-over flags** (pentru Y2.b post-device):
+- Capabilities `CHOWN`/`DAC_OVERRIDE` la ybos-l0 service: re-evaluate cu strace/auditd evidence pe device real
+- ADB-on + verity-off din `system.prop`: mută într-un `system_dev.prop` aplicat doar pentru build variants `eng`/`userdebug`
+- `Cross.toml` image pin: schimbă din `:edge` (rolling) la SHA fix sau release tag când cross-rs publică versiune stabilă cu NDK modern
+- `ybos` user/group: definește în AOSP system files
 
 ---
 
-## Y2.b — Flash + boot verification (BLOCKED on device acquisition)
+## Y2.b — Flash + boot verification (BLOCKED pe achiziție device)
 
 > Execută George manual când ajunge device-ul. Folosește scaffolds + documentația din Y2.
 
@@ -120,28 +60,138 @@
 
 ---
 
-## Y3+ — Faze enumerate (detaliu TBD când ajungem)
+## Y3 — L1 orchestrator skeleton + L0 SessionService gRPC ⭐ NEXT
 
-Doar headline-uri. Semne de întrebare doar unde **chiar afectează faza activă (Y2)**.
+> Decizii agreate (2026-05-22 sesiune Y3):
+> - **Process model agenți**: hybrid — trait `Agent` + trait `AgentRuntime` cu impl `InProcess` în Y3, design-uit pentru `Subprocess` impl viitor (Android Binder / gRPC) fără refactor major.
+> - **Cargo workspace**: da, convertesc root în workspace cu members `[l0, orchestrator]`.
+> - **L1 → L0 session wire-up**: real (NU doar placeholder). L0 expune SessionService gRPC nouă, L1 are client real care apelează `IssueToken/RevokeSession/ListActive`.
 
-- **L1 orchestrator skeleton** — `ybos-orchestrator` crate, capability enforcement, agent registry. ❓ Hook pentru Agent Builder runtime registration: design-uim API-ul L1 în acea fază astfel încât session_token API din Y1 să se integreze curat.
-- **LLM inference layer** — llama.cpp + mlc-llm pe NPU. Afectează Y2? **NU**.
-- **Agent seed: Calendar** — primul agent end-to-end demo. **NU** afectează Y2.
-- **Agent seed: News Digest**. **NU** afectează Y2.
-- **Privacy firewall Layer 1 (capabilities)**. **NU** afectează Y2.
-- **Privacy firewall Layer 2 (eBPF redactor)**. ❓ eBPF necesită kernel features specifice — Y2 doc-only flag pentru BoardConfig (CONFIG_BPF, CONFIG_BPF_SYSCALL, etc.) ca să nu uităm la Y2.b.
-- **Privacy firewall Layer 3 (LLM judge)**. **NU** afectează Y2.
-- **Agent seed: Trip Planner**. **NU** afectează Y2.
-- **Agent seed: Market Intel**. **NU** afectează Y2.
-- **Agent seed: Learning Curator**. **NU** afectează Y2.
-- **Agent Builder Framework** — template + LLM-assisted configurator + UI flow. **NU** afectează Y2.
-- **User-Context Memory subsystem** — storage + sync + capability `data.user_prefs`. **NU** afectează Y2.
-- **Laptop Companion (Tauri)** — pairing QR/NFC + session crypto + task offload + cache sync. **NU** afectează Y2.
-- **UI native YBOS mobile** — launcher, onboarding wizard UI, agent dashboards. **NU** afectează Y2.
-- **Cross-device extins** (multi-phone, tabletă) — post-MVP. **NU** afectează Y2.
-- **Cloud burst activation** — v0.2+. **NU** afectează Y2.
-- **VM Mode (Tier 1) laptop** — Linux VM minim, GPU passthrough, SEV-SNP/TDX integration. Research item, post-MVP. **NU** afectează Y2.
-- **Split inference layer-by-layer** ❓ research item (vezi ARCHITECTURE.md §4.5). Independent. **NU** afectează Y2.
+### Scope Y3
+
+#### A. L0 — expune session token API via gRPC (wrapper peste identity::session existing)
+
+1. **Proto definition**
+   - `l0/proto/l0.proto`: adaugă service `SessionService` cu RPC:
+     - `IssueToken(IssueTokenRequest) → IssueTokenResponse` (scope + expiry_secs + peer_fingerprint → session_id, key_bytes, expires_at)
+     - `RevokeSession(RevokeSessionRequest) → RevokeSessionResponse`
+     - `RevokeAll(RevokeAllRequest) → RevokeAllResponse`
+     - `ListActive(ListActiveRequest) → ListActiveResponse` (returnează `repeated SessionInfo`)
+     - `InitializeForTest(InitializeForTestRequest) → InitializeForTestResponse` — DEV-ONLY RPC pentru testare end-to-end fără onboarding flow real; gated în production cu feature flag `dev_test_init` sau env check.
+
+2. **Implementation**
+   - `l0/src/grpc/session_service.rs` (NEW) — implementează tonic service trait, deleagă la `identity::session::{issue_session_token, revoke_session, revoke_all, list_active}` existing.
+   - `l0/src/grpc/mod.rs` — register `SessionService` alongside existing `IdentityService`/`TelemetryService`/`ReflexService` în `serve()`.
+   - **NU modifică `l0/src/main.rs`** (L0 SACRED) — toată wiring se face în `grpc::serve()`.
+   - **NU modifică `l0/src/identity/*`** (Y1 modules, L0 SACRED enforcement) — session_service.rs e doar wrapper peste module-level API public din Y1.
+
+3. **Tests**
+   - Unit tests pentru convert layer (proto ↔ Rust types)
+   - Integration test: spawn SessionService în background tokio task → client tonic apelează IssueToken → primește token valid → ListActive returnează 1 sesiune → RevokeSession → ListActive returnează 0
+   - Pentru InitializeForTest: cu master_key fix `[0u8; 32]` în test (NU în production)
+
+#### B. Cargo workspace conversion
+
+1. **Root**
+   - `Cargo.toml` (NEW, root): `[workspace] members = ["l0", "orchestrator"] resolver = "2"` + `[workspace.dependencies]` cu deps shared (tokio, tracing, anyhow, thiserror, serde, prost, tonic, hex, sha2 — versiuni unice).
+2. **l0**
+   - `l0/Cargo.toml` — adapt minor pentru workspace inheritance (e.g. `tokio.workspace = true` unde aplicabil); restul intact. Verifică `cargo test -p ybos-l0` still green.
+3. **orchestrator** — vezi C.
+4. **CI**
+   - `.github/workflows/ci.yml` — schimbă `cargo test` în `cargo test --workspace`, similar pentru cross-compile job dacă orchestrator targets aarch64.
+
+#### C. orchestrator/ crate (L1 skeleton)
+
+Layout:
+```
+orchestrator/
+├── Cargo.toml             # package = ybos-orchestrator
+├── build.rs               # tonic-build pentru proto
+├── proto/
+│   └── orchestrator.proto # L1's own API (RegisterAgent, ListAgents, InvokeAgent, ...)
+└── src/
+    ├── lib.rs             # public re-exports
+    ├── main.rs            # binary daemon mode (optional, minimal)
+    ├── agent.rs           # trait Agent + Manifest struct
+    ├── runtime.rs         # trait AgentRuntime + impl InProcessRuntime + placeholder SubprocessRuntime trait (no impl)
+    ├── manifest.rs        # parser TOML pentru manifest.toml
+    ├── capability.rs      # Layer 1 enforcement (declarative check)
+    ├── registry.rs        # AgentRegistry: static + runtime registration
+    ├── l0_client.rs       # gRPC client pentru L0 SessionService + IdentityService
+    └── agents/
+        └── hello.rs       # demo agent in-process pentru smoke test
+```
+
+Funcționalitate minimă Y3:
+- `Agent` trait cu metode: `manifest() → &Manifest`, `invoke(call: AgentCall) → Result<AgentResponse>`
+- `Manifest` struct cu: `name: String, version: String, capabilities: Capabilities` unde `Capabilities` declară `net.domains`, `fs.paths`, `data.types`, `data.user_prefs` (read|read_write|none)
+- `AgentRuntime` trait cu `spawn(manifest) → RuntimeHandle`, `invoke(handle, call) → Response`. Impl `InProcessRuntime` care păstrează agenții ca `Arc<dyn Agent>` într-un HashMap.
+- `AgentRegistry` cu: `register_static(agent: Arc<dyn Agent>)`, `register_runtime(manifest_toml: &str, factory: Box<dyn Fn() -> Arc<dyn Agent>>)`, `list() → Vec<&Manifest>`, `get(name) → Option<Arc<dyn Agent>>`
+- `capability::enforce(manifest, intended_op: Operation) → Result<()>` — verifică dacă op-ul cerut e declarat în manifest. Operațiuni: `NetConnect(domain)`, `FsRead(path)`, `FsWrite(path)`, `UserContextRead`, `UserContextWrite`.
+- `l0_client::L0Client` cu metodă `issue_session_token(scope, expiry, peer_fingerprint) → SessionToken` care apelează gRPC SessionService.
+- `hello::HelloAgent` — agent demo cu manifest minimal (no capabilities), răspunde la invoke cu "hello from <name>".
+
+#### D. End-to-end demo (smoke test acceptance)
+
+Test integration care:
+1. Pornește l0 daemon în task tokio
+2. Apelează `SessionService.InitializeForTest` cu master_key fix
+3. Pornește orchestrator → instanțiază `L0Client`
+4. Apelează `l0_client.issue_session_token(scope, expiry, peer_fp)` → primește token valid
+5. Registrează `HelloAgent` static + un al doilea agent printr-un manifest.toml string runtime-registered
+6. `registry.list()` returnează 2 agenți
+7. `runtime.invoke("hello", AgentCall{...})` returnează response așteptat
+8. Test capability enforcement: invoke cu op nedeclarat → `Err(CapabilityDenied)`
+
+### Acceptance criteria Y3
+
+- [ ] `Cargo.toml` root cu workspace funcțional (`cargo build --workspace` verde)
+- [ ] `cargo test --workspace` verde (Y1 48 tests + orchestrator new tests + session_service new tests)
+- [ ] Zero modificări în `l0/src/identity/*` și `l0/src/main.rs` (L0 SACRED preserved)
+- [ ] Zero modificări în `docs/`, `YBOSClaude.md`, `README.md` root, `reference/`
+- [ ] `l0/proto/l0.proto` extins cu SessionService (4 RPC + 1 dev-only)
+- [ ] `l0/src/grpc/session_service.rs` implementat + înregistrat în `grpc::serve()`
+- [ ] `orchestrator/` crate creat conform layout-ului
+- [ ] Demo end-to-end test pass: orchestrator obține session token real de la L0, registrează agenți (static + runtime), capability enforcement blochează op nedeclarat
+- [ ] CI: `Build & Test l0`, `Cross-compile l0 for Android` (workspace-aware), `ShellCheck` toate verzi. Adaugă nou job `Build & Test orchestrator`.
+
+### Ce NU intra în Y3
+
+- Privacy firewall Layer 2 (eBPF redactor) — fază separată
+- Privacy firewall Layer 3 (LLM judge) — fază separată
+- LLM inference integration — Y4
+- Persistent memory per-agent (vector DB) — fază separată
+- User-Context Memory subsystem — fază separată
+- Agent Builder LLM-assisted configurator full — Y12.5 (Y3 lasă doar hook în registry pentru runtime registration)
+- Real laptop pairing flow (QR/NFC scan + mTLS conn) — fază separată
+- Process isolation pentru agenți (SubprocessRuntime impl real) — design-uit ca trait în Y3, impl ulterior
+- Replace Argon2id-XOR envelope A cu AEAD vetted — known carry-over Y1, fază separată
+- Cross-compile orchestrator pentru aarch64-android — verificare doar pe l0 în CI Y3; orchestrator cross-compile când avem nevoie
+
+---
+
+## Y4+ — Faze enumerate (detaliu TBD când ajungem)
+
+Doar headline-uri. Semne de întrebare doar unde **chiar afectează faza activă (Y3)**.
+
+- **LLM inference layer** — llama.cpp + mlc-llm pe NPU. ❓ Inference trait design: Y3 orchestrator nu o consumă direct, dar registry/runtime ar trebui să poată invoca agenți care apoi cer LLM (deferat la Y4).
+- **Agent seed: Calendar** — primul agent end-to-end demo cu LLM tools.
+- **Agent seed: News Digest**.
+- **Privacy firewall Layer 1 (capabilities)** — Y3 livrează schelet (`capability::enforce`); Y7 hardenizează enforcement pe toate operațiile + audit log + UI.
+- **Privacy firewall Layer 2 (eBPF redactor)**.
+- **Privacy firewall Layer 3 (LLM judge)**.
+- **Agent seed: Trip Planner**.
+- **Agent seed: Market Intel**.
+- **Agent seed: Learning Curator**.
+- **Agent Builder Framework** — template `agents/_template/` + LLM-assisted configurator + UI flow. Y3 lasă hook în registry; Y12.5 livrează workflow complet.
+- **User-Context Memory subsystem** — storage + sync + capability `data.user_prefs`. Y3 declară doar capability în Manifest, NU implementează storage.
+- **Laptop Companion (Tauri)** — pairing QR/NFC + session crypto + task offload + cache sync. Y3 livrează server-side (L0 SessionService) + client-side (orchestrator L0Client); Tauri app + protocol mTLS rămân fază separată.
+- **UI native YBOS mobile** — launcher, onboarding wizard UI, agent dashboards.
+- **Cross-device extins** (multi-phone, tabletă) — post-MVP.
+- **Cloud burst activation** — v0.2+.
+- **VM Mode (Tier 1) laptop** — Linux VM minim, GPU passthrough, SEV-SNP/TDX integration. Research, post-MVP.
+- **Split inference layer-by-layer** ❓ research item (vezi ARCHITECTURE.md §4.5). Independent.
+- **SubprocessRuntime impl real** — pentru process isolation agenți. Y3 design-uit ca trait, impl când avem nevoie reală (probabil aproape de Privacy Firewall hardening).
 
 ---
 
