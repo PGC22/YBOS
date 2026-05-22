@@ -92,6 +92,22 @@ jobs:
         run: cargo test -p ybos-memory --features fastembed,sqlite_vec
         timeout-minutes: 15
 
+  news_smoke:
+    name: News Digest smoke (real RSS)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache test models
+        uses: actions/cache@v4
+        with:
+          path: target/test-models/
+          key: ${{ runner.os }}-test-models-fastembed-v1.0
+      - name: Run News Digest smoke test
+        run: cargo test -p ybos-orchestrator --features real_rss,fastembed,sqlite_vec --test news_e2e -- --include-ignored
+        timeout-minutes: 5
+
   shellcheck:
     name: ShellCheck
     runs-on: ubuntu-latest

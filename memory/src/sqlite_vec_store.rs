@@ -84,7 +84,7 @@ impl VectorStore for SqliteVecStore {
         let conn = self.conn.clone();
 
         tokio::task::spawn_blocking(move || {
-            let mut conn = conn.lock().unwrap();
+            let mut conn = conn.lock().expect("SqliteVecStore: connection lock poisoned");
             let tx = conn.transaction().map_err(|e| MemoryError::Storage(e.to_string()))?;
 
             let id_bytes = id.as_bytes();
@@ -127,7 +127,7 @@ impl VectorStore for SqliteVecStore {
 
         let conn = self.conn.clone();
         tokio::task::spawn_blocking(move || {
-            let conn = conn.lock().unwrap();
+            let conn = conn.lock().expect("SqliteVecStore: connection lock poisoned");
             let embedding_bytes = bytemuck::cast_slice::<f32, u8>(&query.embedding);
 
             let mut stmt = conn.prepare(
@@ -188,7 +188,7 @@ impl VectorStore for SqliteVecStore {
     async fn delete(&self, id: VectorId) -> Result<(), MemoryError> {
         let conn = self.conn.clone();
         tokio::task::spawn_blocking(move || {
-            let mut conn = conn.lock().unwrap();
+            let mut conn = conn.lock().expect("SqliteVecStore: connection lock poisoned");
             let tx = conn.transaction().map_err(|e| MemoryError::Storage(e.to_string()))?;
             let id_bytes = id.as_bytes();
 
@@ -214,7 +214,7 @@ impl VectorStore for SqliteVecStore {
     async fn count(&self) -> Result<usize, MemoryError> {
         let conn = self.conn.clone();
         tokio::task::spawn_blocking(move || {
-            let conn = conn.lock().unwrap();
+            let conn = conn.lock().expect("SqliteVecStore: connection lock poisoned");
             let count: usize = conn.query_row("SELECT count(*) FROM memories", [], |row| row.get(0))
                 .map_err(|e| MemoryError::Storage(e.to_string()))?;
             Ok(count)
