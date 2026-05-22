@@ -37,19 +37,33 @@ impl AgentRuntime for InProcessRuntime {
         let name = manifest.name.clone();
 
         // If already active, just return handle
-        if self.active_agents.read().unwrap().contains_key(&name) {
+        if self
+            .active_agents
+            .read()
+            .expect("InProcessRuntime: active_agents lock poisoned")
+            .contains_key(&name)
+        {
             return Ok(RuntimeHandle { agent_name: name });
         }
 
-        let agent = self.registry.get(&name)
+        let agent = self
+            .registry
+            .get(&name)
             .ok_or_else(|| anyhow!("agent not found in registry: {}", name))?;
 
-        self.active_agents.write().unwrap().insert(name.clone(), agent);
+        self.active_agents
+            .write()
+            .expect("InProcessRuntime: active_agents lock poisoned")
+            .insert(name.clone(), agent);
         Ok(RuntimeHandle { agent_name: name })
     }
 
     async fn invoke(&self, handle: &RuntimeHandle, call: AgentCall) -> Result<AgentResponse> {
-        let agent = self.active_agents.read().unwrap().get(&handle.agent_name)
+        let agent = self
+            .active_agents
+            .read()
+            .expect("InProcessRuntime: active_agents lock poisoned")
+            .get(&handle.agent_name)
             .cloned()
             .ok_or_else(|| anyhow!("agent not active in runtime: {}", handle.agent_name))?;
 

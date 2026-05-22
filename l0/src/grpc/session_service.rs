@@ -66,12 +66,11 @@ impl SessionService for SessionSvc {
         _req: Request<RevokeAllRequest>,
     ) -> Result<Response<RevokeAllResponse>, Status> {
         debug!("[L0/grpc] SessionService.RevokeAll");
-        let count = session::list_active().len() as u32;
-        session::revoke_all()
+        let count = session::revoke_all()
             .map_err(|e| Status::internal(format!("failed to revoke all sessions: {}", e)))?;
 
         Ok(Response::new(RevokeAllResponse {
-            revoked_count: count,
+            revoked_count: count as u32,
         }))
     }
 
