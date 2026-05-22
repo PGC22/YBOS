@@ -1,6 +1,6 @@
 use std::path::Path;
 use std::pin::Pin;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, OnceLock};
 use std::num::NonZeroU32;
 use async_trait::async_trait;
 use futures::Stream;
@@ -15,8 +15,8 @@ use tokio_stream::wrappers::ReceiverStream;
 use crate::trait_def::Inference;
 use crate::types::{CompleteRequest, CompleteResponse, Token, ModelInfo, InferenceError, FinishReason};
 
-// Since LlamaBackend is required for new_context, and it's not Clone, we need a better way.
-// Let's just init it in a global and keep it.
+// Global backend instance to ensure LlamaBackend::init() is only called once.
+static GLOBAL_BACKEND: OnceLock<Arc<LlamaBackend>> = OnceLock::new();
 
 pub struct LlamaParams {
     pub context_size: usize,
@@ -42,18 +42,31 @@ pub struct LocalLlama {
 
 impl LocalLlama {
     pub fn load(model_path: &Path, params: LlamaParams) -> Result<Self, InferenceError> {
-        let backend = LlamaBackend::init().map_err(|e| InferenceError::ModelLoad(format!("Backend init failed: {:?}", e)))?;
+        static INIT_MUTEX: Mutex<()> = Mutex::new(());
+        let backend = {
+            let _guard = INIT_MUTEX.lock().map_err(|_| {
+                InferenceError::ModelLoad("Failed to acquire backend init lock".into())
+            })?;
+            if let Some(b) = GLOBAL_BACKEND.get() {
+                b.clone()
+            } else {
+                let b = Arc::new(LlamaBackend::init().map_err(|e| {
+                    InferenceError::ModelLoad(format!("Backend init failed: {:?}", e))
+                })?);
+                let _ = GLOBAL_BACKEND.set(b.clone());
+                b
+            }
+        };
 
-        let model_params = LlamaModelParams::default()
-            .with_n_gpu_layers(params.n_gpu_layers);
+        let model_params = LlamaModelParams::default().with_n_gpu_layers(params.n_gpu_layers);
 
         let model = LlamaModel::load_from_file(&backend, model_path, &model_params)
             .map_err(|e| InferenceError::ModelLoad(e.to_string()))?;
 
         Ok(Self {
             model: Arc::new(model),
-            backend: Arc::new(backend),
-            params
+            backend,
+            params,
         })
     }
 }
