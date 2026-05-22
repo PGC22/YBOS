@@ -14,9 +14,9 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
-      - name: Install protoc
-        run: sudo apt-get install -y protobuf-compiler
       - name: Run tests
+        # protoc is provided at build time by protoc-bin-vendored (build-dep),
+        # so no system protoc install is needed here.
         working-directory: l0
         run: cargo test
 
@@ -32,15 +32,10 @@ jobs:
       - name: Install cross
         run: cargo install cross
       - name: Build with cross
+        # NDK image override lives in l0/Cross.toml so local dev and CI
+        # use the same toolchain.
         working-directory: l0
-        run: |
-          # Use a newer NDK image to avoid -lunwind issues with modern Rust
-          # Also need to map the project correctly for cross
-          cat <<EOF > Cross.toml
-          [target.aarch64-linux-android]
-          image = "ghcr.io/cross-rs/aarch64-linux-android:edge"
-          EOF
-          cross build --release --target aarch64-linux-android
+        run: cross build --release --target aarch64-linux-android
       - name: Verify binary
         run: |
           file l0/target/aarch64-linux-android/release/ybos-l0 | grep "ELF 64-bit LSB" | grep "ARM aarch64"

@@ -1,0 +1,12 @@
+# Cross.toml — cross-rs config for ybos-l0 Android target
+# WHY: default cross-rs image for aarch64-linux-android uses an old NDK
+# (GCC 4.9.x) which cannot find -lunwind when linking modern Rust crates
+# (e.g. rumqttc -> rustls -> aws-lc-sys/ring). The :edge image ships a
+# recent NDK that resolves this.
+#
+# TODO Y2.b: pin to a specific commit SHA or stable release tag once
+# cross-rs publishes a stable version with the modern NDK. :edge is
+# rolling and may change behavior without notice.
+
+[target.aarch64-linux-android]
+image = "ghcr.io/cross-rs/aarch64-linux-android:edge"

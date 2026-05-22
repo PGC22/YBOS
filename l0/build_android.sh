@@ -16,13 +16,26 @@ fi
 
 echo "==> Using NDK at: $ANDROID_NDK_HOME"
 
-# 2. Identify host platform for toolchain path
+# 2. Identify host platform for toolchain path.
+# NDK ships a single arch per host download; on Apple Silicon and ARM Linux
+# the toolchain prebuilt dir uses the host arch in its name (e.g. darwin-arm64).
 OS_NAME=$(uname | tr '[:upper:]' '[:lower:]')
-HOST_TAG="${OS_NAME}-x86_64"
+ARCH_RAW=$(uname -m)
+case "$ARCH_RAW" in
+    x86_64|amd64) HOST_ARCH="x86_64" ;;
+    arm64|aarch64) HOST_ARCH="arm64" ;;
+    *) HOST_ARCH="$ARCH_RAW" ;;
+esac
+HOST_TAG="${OS_NAME}-${HOST_ARCH}"
 TOOLCHAIN="$ANDROID_NDK_HOME/toolchain/bin" # Standard path in newer NDKs
-# Fallback for some NDK structures
+# Fallback for split-arch NDK structures.
 if [ ! -d "$TOOLCHAIN" ]; then
     TOOLCHAIN="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/$HOST_TAG/bin"
+fi
+# Last-resort fallback: some NDK ARM Mac builds still publish under x86_64
+# (Rosetta-bundled). Try that if the native arch dir is absent.
+if [ ! -d "$TOOLCHAIN" ] && [ "$HOST_ARCH" != "x86_64" ]; then
+    TOOLCHAIN="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/${OS_NAME}-x86_64/bin"
 fi
 
 if [ ! -d "$TOOLCHAIN" ]; then

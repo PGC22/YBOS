@@ -5,6 +5,15 @@ ro.product.brand=YBOS
 ro.product.manufacturer=YBOS
 ro.product.model=YBOS-DEV
 
-# Enable ADB at first boot for dev devices
+# --- DEV-ONLY BUILD FLAGS ------------------------------------------------
+# WARNING: the lines below are intentionally permissive for development.
+# Before any production / user-build release, ALL of these must be removed
+# or overridden in a `user` build variant:
+#   - ADB must NOT be on by default
+#   - ro.adb.secure must be 1 (auth required for every host)
+#   - dm-verity / AVB must remain enabled (do NOT keep
+#     `fastboot --disable-verity --disable-verification` in flash flow)
+# Y2.b TODO: move these to a `device/ybos/common/system_dev.prop` overlay
+# applied only for `eng` / `userdebug` build variants.
 persist.sys.usb.config=mtp,adb
 ro.adb.secure=0

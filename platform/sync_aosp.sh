@@ -7,7 +7,7 @@ set -euo pipefail
 # Configuration
 AOSP_DIR="${1:-$HOME/aosp-ybos}"
 MANIFEST_URL="https://github.com/PGC22/YBOS.git"
-MANIFEST_BRANCH="feat/y2-build-environment" # Update this to 'main' once merged
+MANIFEST_BRANCH="main"
 MANIFEST_FILE="platform/manifests/ybos-aosp.xml"
 
 echo "==> Preparing AOSP sync in: $AOSP_DIR"
