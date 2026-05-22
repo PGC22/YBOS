@@ -16,6 +16,7 @@ pub enum Operation {
     FsWrite(PathBuf),
     UserContextRead,
     UserContextWrite,
+    LlmCall,
 }
 
 pub fn enforce(manifest: &Manifest, op: &Operation) -> Result<()> {
@@ -54,6 +55,13 @@ pub fn enforce(manifest: &Manifest, op: &Operation) -> Result<()> {
                 Ok(())
             } else {
                 Err(anyhow!(CapabilityError::Denied("UserContextWrite".to_string())))
+            }
+        }
+        Operation::LlmCall => {
+            if manifest.capabilities.llm {
+                Ok(())
+            } else {
+                Err(anyhow!(CapabilityError::Denied("LlmCall".to_string())))
             }
         }
     }

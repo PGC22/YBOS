@@ -38,6 +38,7 @@ pub struct LocalLlama {
     model: Arc<LlamaModel>,
     backend: Arc<LlamaBackend>,
     params: LlamaParams,
+    model_path: std::path::PathBuf,
 }
 
 impl LocalLlama {
@@ -67,6 +68,7 @@ impl LocalLlama {
             model: Arc::new(model),
             backend,
             params,
+            model_path: model_path.to_path_buf(),
         })
     }
 }
@@ -74,81 +76,95 @@ impl LocalLlama {
 #[async_trait]
 impl Inference for LocalLlama {
     async fn complete(&self, req: CompleteRequest) -> Result<CompleteResponse, InferenceError> {
-        let n_ctx = NonZeroU32::new(self.params.context_size as u32);
-        let ctx_params = LlamaContextParams::default()
-            .with_n_ctx(n_ctx)
-            .with_n_threads(self.params.n_threads);
+        let model = self.model.clone();
+        let backend = self.backend.clone();
+        let context_size = self.params.context_size;
+        let n_threads = self.params.n_threads;
 
-        let mut ctx = self.model.new_context(&self.backend, ctx_params)
-            .map_err(|e| InferenceError::Generation(e.to_string()))?;
+        tokio::task::spawn_blocking(move || -> Result<CompleteResponse, InferenceError> {
+            let n_ctx = NonZeroU32::new(context_size as u32);
+            let ctx_params = LlamaContextParams::default()
+                .with_n_ctx(n_ctx)
+                .with_n_threads(n_threads);
 
-        let tokens_list = self.model.str_to_token(&req.prompt, AddBos::Always)
-            .map_err(|e| InferenceError::Generation(format!("{:?}", e)))?;
-        let tokens_in = tokens_list.len();
+            let mut ctx = model
+                .new_context(&backend, ctx_params)
+                .map_err(|e| InferenceError::Generation(e.to_string()))?;
 
-        let mut batch = LlamaBatch::new(self.params.context_size, 1);
-        let last_index = tokens_list.len() as i32 - 1;
-        for (i, token) in tokens_list.into_iter().enumerate() {
-            let _ = batch.add(token, i as i32, &[0.into()], i as i32 == last_index);
-        }
+            let tokens_list = model
+                .str_to_token(&req.prompt, AddBos::Always)
+                .map_err(|e| InferenceError::Generation(format!("{:?}", e)))?;
+            let tokens_in = tokens_list.len();
 
-        ctx.decode(&mut batch).map_err(|e| InferenceError::Generation(e.to_string()))?;
-
-        let mut samplers = vec![
-            LlamaSampler::top_p(req.top_p, 1),
-            LlamaSampler::temp(req.temperature),
-        ];
-        if let Some(seed) = req.seed {
-            samplers.push(LlamaSampler::dist(seed as u32));
-        }
-
-        let mut sampler = LlamaSampler::chain_simple(samplers);
-
-        let mut decoded_text = String::new();
-        let mut tokens_out = 0;
-        let mut n_cur = batch.n_tokens();
-
-        while tokens_out < req.max_tokens {
-            let token = sampler.sample(&ctx, batch.n_tokens() - 1);
-            sampler.accept(token);
-
-            if self.model.is_eog_token(token) {
-                return Ok(CompleteResponse {
-                    text: decoded_text,
-                    finish_reason: FinishReason::Stop,
-                    tokens_in,
-                    tokens_out: tokens_out as usize,
-                });
+            let mut batch = LlamaBatch::new(context_size, 1);
+            let last_index = tokens_list.len() as i32 - 1;
+            for (i, token) in tokens_list.into_iter().enumerate() {
+                let _ = batch.add(token, i as i32, &[0.into()], i as i32 == last_index);
             }
 
-            let token_str = self.model.token_to_str(token, Special::Plaintext)
+            ctx.decode(&mut batch)
                 .map_err(|e| InferenceError::Generation(e.to_string()))?;
-            decoded_text.push_str(&token_str);
-            tokens_out += 1;
 
-            for stop_seq in &req.stop {
-                if decoded_text.ends_with(stop_seq) {
+            let mut samplers = vec![
+                LlamaSampler::top_p(req.top_p, 1),
+                LlamaSampler::temp(req.temperature),
+            ];
+            if let Some(seed) = req.seed {
+                samplers.push(LlamaSampler::dist(seed as u32));
+            }
+
+            let mut sampler = LlamaSampler::chain_simple(samplers);
+
+            let mut decoded_text = String::new();
+            let mut tokens_out = 0;
+            let mut n_cur = batch.n_tokens();
+
+            while tokens_out < req.max_tokens {
+                let token = sampler.sample(&ctx, batch.n_tokens() - 1);
+                sampler.accept(token);
+
+                if model.is_eog_token(token) {
                     return Ok(CompleteResponse {
                         text: decoded_text,
-                        finish_reason: FinishReason::StopSequence,
+                        finish_reason: FinishReason::Stop,
                         tokens_in,
                         tokens_out: tokens_out as usize,
                     });
                 }
+
+                let token_str = model
+                    .token_to_str(token, Special::Plaintext)
+                    .map_err(|e| InferenceError::Generation(e.to_string()))?;
+                decoded_text.push_str(&token_str);
+                tokens_out += 1;
+
+                for stop_seq in &req.stop {
+                    if decoded_text.ends_with(stop_seq) {
+                        return Ok(CompleteResponse {
+                            text: decoded_text,
+                            finish_reason: FinishReason::StopSequence(stop_seq.clone()),
+                            tokens_in,
+                            tokens_out: tokens_out as usize,
+                        });
+                    }
+                }
+
+                batch.clear();
+                let _ = batch.add(token, n_cur, &[0.into()], true);
+                ctx.decode(&mut batch)
+                    .map_err(|e| InferenceError::Generation(e.to_string()))?;
+                n_cur += 1;
             }
 
-            batch.clear();
-            let _ = batch.add(token, n_cur, &[0.into()], true);
-            ctx.decode(&mut batch).map_err(|e| InferenceError::Generation(e.to_string()))?;
-            n_cur += 1;
-        }
-
-        Ok(CompleteResponse {
-            text: decoded_text,
-            finish_reason: FinishReason::MaxTokens,
-            tokens_in,
-            tokens_out: tokens_out as usize,
+            Ok(CompleteResponse {
+                text: decoded_text,
+                finish_reason: FinishReason::MaxTokens,
+                tokens_in,
+                tokens_out: tokens_out as usize,
+            })
         })
+        .await
+        .map_err(|e| InferenceError::Generation(format!("spawn_blocking failed: {}", e)))?
     }
 
     async fn complete_stream(
@@ -255,9 +271,21 @@ impl Inference for LocalLlama {
     }
 
     fn model_info(&self) -> ModelInfo {
+        // Read model name from GGUF metadata if available.
+        // llama-cpp-2 0.1.146 provides meta_val_str for this.
+        let model_name = self.model.meta_val_str("general.name").unwrap_or_else(|_| {
+            // Fallback to filename if metadata is missing.
+            format!(
+                "GGUF Model ({})",
+                self.model_path
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+            )
+        });
         ModelInfo {
             backend: "local-llama".into(),
-            model_name: "GGUF Model".into(),
+            model_name,
             context_window: self.params.context_size,
         }
     }
