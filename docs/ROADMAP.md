@@ -119,14 +119,224 @@
 
 ---
 
-## Y7 — Privacy Firewall Layer 1 hardening + carry-overs cleanup ⭐ NEXT
+## Y7 — Privacy Firewall Layer 1 hardening + carry-overs cleanup ✅ Done (PR #8 merged)
 
-> Decizii agreate (2026-05-22 sesiune Y7):
-> - **Scope Y7** = hardening Layer 1 (path normalization + audit log) + bundle carry-overs Y6 (+ unele Y4/Y5/Y3) într-un singur PR coerent.
-> - **Path normalization** = crate extern `path-clean` (well-tested lexical normalizer cu `..` handling). NU duplicăm logica din `l0/src/identity/paths.rs::normalize_lexical` (L0 SACRED).
-> - **Audit log** = tracing structured events cu target `ybos.audit`, fields `agent`, `op`, `outcome`, `reason`. Allow = `tracing::info!`, Deny = `tracing::warn!`. Capturat în teste via `tracing-test` crate.
-> - **UI vizualizare capabilities** = deferat la fază UI dedicată (Y... când avem UI framework decis).
-> - **Enforcement consistent pe toate operațiile** = audit log îmbunătățește vizibilitatea, dar enforcement-ul per-op rămâne by-convention la agent (Rust nu suportă aspect-oriented). Documentat clar în comments + cookbook.
+- `path-clean` crate adăugat în orchestrator deps
+- `capability::enforce` normalizes `FsRead`/`FsWrite` paths și fs_paths declared via `path_clean::clean`; `..` bypass blocat
+- Audit log: toate enforce() calls emit tracing event structured cu target `ybos.audit`, fields `agent`/`op`/`outcome`/`reason`; allow = info, deny = warn
+- Audit log tests via custom `Layer` în `#[cfg(test)] mod tests` din `capability.rs` (drop tracing-test 0.2 — unreliable cu target custom)
+- Y6 carry-overs cleanup: SqliteVecStore unwraps eliminate + score doc clarification, MockVectorStore RwLock messages, MockEmbedder cosmetic, FastEmbedEmbedder load() simplified, HelloAgent memory embed-once
+
+**Known carry-overs Y7**:
+- `SqliteVecStore` Mutex `.unwrap()` la lock acquire (line 130, 191) — deferat
+- Capability enforce by-convention (nu aspect-oriented) — Rust nu suportă cleanly, documentat
+- Context pool LocalLlama — deferat
+- UI vizualizare capabilities — Y... fază UI dedicată
+
+---
+
+## Y8 — News Digest seed agent + minimal HTTP client + RSS parser (hand-rolled) ⭐ NEXT
+
+> Decizii agreate (2026-05-22 sesiune Y8):
+> - **Primul seed agent** = News Digest (folosește Y4 inference + Y6 memory + Y7 capability). NU Calendar (necesită Google OAuth — fază viitoare).
+> - **HTTP client** = `hyper-util` + `hyper-tls` direct (NU `reqwest` heavy deps; YBOS privacy/control-first philosophy). Trait `HttpClient` cu impl `HyperHttpClient` + `MockHttpClient`.
+> - **XML parser** = hand-rolled de la zero (lexer + parser, NU `quick-xml` sau alt crate XML). RSS 2.0 + minim Atom 1.0 subset. Big scope, dar aligned cu YBOS minimal-deps principle.
+> - **Real RSS feed smoke** = behind feature flag `real_rss`, descarcă din feed public stabil (e.g. BBC, Reuters). Mocks default.
+> - **Carry-over Y7** inclus: `SqliteVecStore` Mutex `.unwrap()` → `.expect()` messages descriptive (small, low-risk fix).
+
+> ⚠️ **Avertisment scope**: hand-rolled XML lexer + parser + RSS layer + hyper direct + News agent integration = PR potențial mare (~1000-1500 linii). Dacă Jules detectează că scope devine ne-livrabil într-un singur PR, va flag în PR description și vom splita Y8 în:
+> - Y8.a = HTTP client + XML parser + RSS interpreter (infrastructure)
+> - Y8.b = News agent integration (consumă Y8.a)
+
+### Scope Y8
+
+#### A. HTTP client (`orchestrator/src/http.rs` — general purpose, reusable de viitori agenți)
+
+1. Trait `HttpClient`:
+   ```rust
+   #[async_trait]
+   pub trait HttpClient: Send + Sync {
+       async fn get(&self, url: &str) -> Result<HttpResponse, HttpError>;
+   }
+
+   pub struct HttpResponse {
+       pub status: u16,
+       pub headers: Vec<(String, String)>,
+       pub body: Vec<u8>,
+   }
+
+   #[derive(Debug, thiserror::Error)]
+   pub enum HttpError {
+       InvalidUrl, Network, Tls, Status(u16), Body, Timeout
+   }
+   ```
+
+2. `HyperHttpClient` impl via `hyper-util` + `hyper-tls`:
+   - HttpsConnector via hyper-tls (rustls backend dacă disponibil în hyper-tls 0.6+)
+   - Client builder cu reasonable defaults (15s timeout, 10MB max body)
+   - Body collected în-memory (NU streaming pentru Y8; agenții lucrează cu documente întregi)
+   - Redirect handling (max 5 redirects)
+   - User-Agent: `"YBOS/0.1 (+https://github.com/PGC22/YBOS)"`
+
+3. `MockHttpClient` (cfg-gated `#[cfg(test)]` sau în `src/`):
+   - Constructor primește `Vec<(url_pattern, HttpResponse)>` canned
+   - `get(url)` returnează primul match sau eroare
+
+4. Adăugare în `AgentContext`:
+   ```rust
+   pub struct AgentContext {
+       pub inference: Arc<dyn Inference>,
+       pub memory: Arc<dyn VectorStore>,
+       pub embedder: Arc<dyn Embedder>,
+       pub http: Arc<dyn HttpClient>,  // NEW
+   }
+   ```
+   - Trait Agent::invoke signature unchanged
+   - Capability nouă: `Capabilities.net: bool` SAU folosim existing `net_domains: Vec<String>` și adăugăm enforcement la nivel de HttpClient wrapper (recommended — net_domains deja există)
+   - Decizie: enforcement la nivel de agent — agent verifică `capability::enforce(.., Operation::NetConnect(domain))` înainte de fiecare HTTP call. Pattern by-convention, consistent cu LLM/Memory.
+
+#### B. XML lexer + parser hand-rolled (`orchestrator/src/news/xml.rs`)
+
+Big scope. Documentat clar.
+
+1. **Lexer** (`Tokenizer`):
+   - Input: `&str` sau `&[u8]` (recomandat &str cu UTF-8 validation upfront)
+   - Tokens: `StartTag { name, attrs }`, `EndTag { name }`, `Text(String)`, `CData(String)`, `Comment`, `ProcessingInstruction`, `EntityRef(String)`, `Whitespace`, `Eof`
+   - Handle entity references: `&amp;`, `&lt;`, `&gt;`, `&quot;`, `&apos;`, `&#nnn;`, `&#xHH;`
+   - Handle CDATA sections `<![CDATA[...]]>`
+   - Handle comments `<!-- ... -->`
+   - Handle processing instructions `<?xml version="1.0"?>` (skip-able)
+   - Handle whitespace properly (preserve significant whitespace, trim insignificant)
+   - Errors: `XmlLexerError` enum (UnexpectedEof, InvalidEntity, MalformedTag, etc.)
+
+2. **Parser** (`parse_document`):
+   - Input: token stream
+   - Output: `XmlNode` tree structure
+   ```rust
+   pub enum XmlNode {
+       Element { name: String, attrs: HashMap<String, String>, children: Vec<XmlNode> },
+       Text(String),
+       CData(String),
+   }
+   ```
+   - Tag matching (open vs close)
+   - Nested elements
+   - Attribute parsing (`key="value"` or `key='value'`)
+   - Error: `XmlParseError`
+
+3. **Tests pentru lexer + parser**:
+   - Fixture-based: ~10 XML samples (well-formed RSS, well-formed Atom, malformed cases)
+   - Unit test fiecare token type
+   - Unit test entity decoding
+   - Unit test CDATA
+   - Round-trip: parse → serialize back → reparse → same tree
+
+#### C. RSS interpretation layer (`orchestrator/src/news/rss.rs`)
+
+1. Walks `XmlNode` tree to extract:
+   ```rust
+   pub struct RssChannel {
+       pub title: String,
+       pub link: String,
+       pub description: String,
+       pub items: Vec<RssItem>,
+   }
+
+   pub struct RssItem {
+       pub title: String,
+       pub link: String,
+       pub description: String,
+       pub pub_date: Option<String>,   // RFC 822 string; parsed Y8.c sau later
+       pub guid: Option<String>,
+   }
+   ```
+
+2. Support RSS 2.0 (channel > item structure)
+
+3. **Minim Atom 1.0** support (optional, can defer): Atom uses `<feed><entry>` instead of `<channel><item>`. Document if not implemented.
+
+4. Function `parse_rss(xml: &str) -> Result<RssChannel, RssError>`
+
+#### D. NewsAgent (`orchestrator/src/agents/news.rs`)
+
+1. `NewsAgent` struct:
+   ```rust
+   pub struct NewsAgent {
+       manifest: Manifest,
+       sources: Vec<String>,  // RSS URLs whitelisted
+   }
+   ```
+
+2. Constructor `NewsAgent::new(name: &str, sources: Vec<String>) -> Self`:
+   - Manifest declarations:
+     - `net_domains`: derive from `sources` (extract hostname din each URL)
+     - `llm: true`
+     - `memory: ReadWrite`
+
+3. AgentCall methods (via `call.method`):
+   - `"fetch"`: pentru fiecare `source`, `capability::enforce(.., NetConnect(host))` → `ctx.http.get(url)` → parse RSS → embed fiecare `RssItem` → insert în memory cu metadata `{"source": url, "type": "news", "fetched_at": now}`
+   - `"summarize"`: query top-K recent items din memory → format ca prompt → `ctx.inference.complete()` → return summary
+   - `"query"`: payload e a text query → embed → `ctx.memory.query_top_k(.., 5)` → return matches
+
+4. Capability enforce înainte de fiecare op (consistent cu HelloAgent pattern)
+
+5. Documentat clar în comments că sources e whitelist hardcoded (production: user-configurable via UI / settings, deferred)
+
+#### E. End-to-end tests (`orchestrator/tests/news_e2e.rs`)
+
+1. **Mock test**:
+   - Setup MockHttpClient cu canned RSS XML response
+   - Setup MockInference + MockVectorStore + MockEmbedder
+   - Register NewsAgent
+   - Call `fetch` → assert items inserted în memory
+   - Call `summarize` → assert response non-empty
+   - Call `query("...")` → assert matches returned
+
+2. **Real RSS smoke** (`#[cfg(feature = "real_rss")]`):
+   - Use HyperHttpClient (real)
+   - Fetch din feed public stabil (suggestion: `https://feeds.bbci.co.uk/news/world/rss.xml` sau `https://www.reuters.com/world/rss` — Jules alege unul reliable după inspecție live)
+   - Parse + insert în SqliteVecStore (cu fastembed feature)
+   - Assert at least 1 item parsed successfully
+
+#### F. CI updates (`.github/workflows/ci.yml`)
+
+- Existing jobs adaptați (workspace build acum include hyper deps — verifică că `Build & Test Workspace` rămâne sub 3 min)
+- NEW job: `News Digest smoke (real RSS)` — `cargo test -p ybos-orchestrator --features real_rss,fastembed,sqlite_vec --test news_e2e -- --include-ignored` sau echivalent
+  - Timeout 5 min
+  - Continue-on-error: false (failure blocks merge; dar dacă feed-ul public e down, jobul reia)
+- ShellCheck rămâne
+
+#### G. Carry-over Y7
+
+1. `memory/src/sqlite_vec_store.rs`: înlocuiește `conn.lock().unwrap()` (linia 130, 191) cu `.expect("SqliteVecStore: connection lock poisoned")`. Consistent cu pattern-ul Y3/Y6/Y7.
+
+### Acceptance criteria Y8
+
+- [ ] `orchestrator/src/http.rs` cu trait `HttpClient` + `HyperHttpClient` + `MockHttpClient`
+- [ ] `orchestrator/src/news/xml.rs` cu lexer + parser hand-rolled, fixture-based tests
+- [ ] `orchestrator/src/news/rss.rs` cu RSS 2.0 interpretation; Atom 1.0 best-effort sau documented gap
+- [ ] `orchestrator/src/agents/news.rs` cu NewsAgent + 3 methods (fetch/summarize/query)
+- [ ] `AgentContext` extins cu `http: Arc<dyn HttpClient>`
+- [ ] `orchestrator/src/main.rs` instantiate `HyperHttpClient` în default context
+- [ ] Mock e2e test pass (no network)
+- [ ] Real RSS smoke test pass în CI cu feature `real_rss`
+- [ ] Carry-over Y7: `SqliteVecStore` Mutex unwraps → expects
+- [ ] Zero modificări în `l0/`, `proto/`, `inference/`, `memory/src/{lib,trait_def,types,mock_*,fastembed_*}.rs` (doar sqlite_vec_store.rs pentru carry-over)
+- [ ] Zero modificări în `docs/`, `YBOSClaude.md`, `README.md` root, `reference/`, `platform/`, `Cross.toml`
+- [ ] `Build & Test Workspace` runtime sub 3 min (hyper compile acceptable; dacă crește semnificativ, flag)
+- [ ] All existing CI jobs verzi + 1 nou (real_rss)
+
+### Ce NU intra în Y8
+
+- Calendar agent (necesită Google OAuth — fază viitoare, mai complex)
+- User-Context Memory subsystem
+- Privacy Firewall Layer 2/3
+- Cross-compile orchestrator pentru aarch64 (hyper + custom XML need cross-compile validation — deferred până device disponibil)
+- Background daemon scheduling (RSS auto-fetch la interval) — NewsAgent e on-demand
+- UI / push notifications pentru morning brief
+- Multi-source dedup (RSS items care apar în multiple feeds) — Y8 doar inserează, dedup deferred
+- Agent Builder Framework
+- Real OAuth providers
 
 ### Scope Y7
 
@@ -252,12 +462,11 @@
 
 ---
 
-## Y8+ — Faze enumerate (detaliu TBD când ajungem)
+## Y9+ — Faze enumerate (detaliu TBD când ajungem)
 
-Doar headline-uri. Semne de întrebare doar unde **chiar afectează faza activă (Y7)**.
+Doar headline-uri. Semne de întrebare doar unde **chiar afectează faza activă (Y8)**.
 
-- **Agent seed: News Digest** — primul agent end-to-end cu LLM + Vector store. Folosește Y4 + Y6 + Y7 (capability enforcement hardenized).
-- **Agent seed: Calendar** — Google Calendar OAuth + LLM tool calling.
+- **Agent seed: Calendar** — Google Calendar OAuth + LLM tool calling. Folosește Y8 HTTP client + Y4 inference + Y6 memory.
 - **User-Context Memory subsystem** — storage + sync, va folosi memory crate Y6 ca backend; capability `data.user_prefs` deja declarată în Y3.
 - **Privacy firewall Layer 2 (eBPF redactor)** — kernel-level, blocked pe Linux dev env.
 - **Privacy firewall Layer 3 (LLM judge)** — folosește Inference stack.
