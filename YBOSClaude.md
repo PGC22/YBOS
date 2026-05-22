@@ -317,11 +317,13 @@ Detaliat: vezi `docs/ROADMAP.md`. Sumar succint:
 
 | Fază | Nume | Status |
 |---|---|---|
-| Y0 | Repo bootstrap, structură, docs, port l0/ ca-i | ✅ În progres |
-| Y1 | **L0 generalizare: identity per-user + API session token + onboarding scaffold** | **NEXT** |
-| Y2+ | AOSP build environment, L1 orchestrator, LLM inference, agenți seed, firewall 3 layere, agent builder framework, user-context memory, laptop companion (Tauri + session pairing + task offload), UI native | TBD |
+| Y0 | Repo bootstrap, structură, docs, port l0/ ca-i | ✅ Done |
+| Y1 | L0 generalizare: identity per-user + API session token + onboarding scaffold | ✅ Done (PR #1) |
+| Y2 | **AOSP build env + cross-compile ybos-l0 aarch64 + AOSP overlay scaffolds (device-agnostic)** | **NEXT** |
+| Y2.b | Flash + boot verification | BLOCKED pe achiziție device |
+| Y3+ | L1 orchestrator, LLM inference, agenți seed, firewall 3 layere, agent builder framework, user-context memory, laptop companion (Tauri + session pairing + task offload), UI native | TBD |
 
-**Detaliile fazelor Y2+ sunt notate cu semne de întrebare în ROADMAP.md** doar acolo unde decizia afectează arhitectura sau implementarea din Y1. Restul = "TBD când ajungem".
+**Detaliile fazelor Y3+ sunt notate cu semne de întrebare în ROADMAP.md** doar acolo unde decizia afectează arhitectura sau implementarea din Y2. Restul = "TBD când ajungem".
 
 ---
 
