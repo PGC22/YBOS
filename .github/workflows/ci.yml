@@ -33,7 +33,14 @@ jobs:
         run: cargo install cross
       - name: Build with cross
         working-directory: l0
-        run: cross build --release --target aarch64-linux-android
+        run: |
+          # Use a newer NDK image to avoid -lunwind issues with modern Rust
+          # Also need to map the project correctly for cross
+          cat <<EOF > Cross.toml
+          [target.aarch64-linux-android]
+          image = "ghcr.io/cross-rs/aarch64-linux-android:edge"
+          EOF
+          cross build --release --target aarch64-linux-android
       - name: Verify binary
         run: |
           file l0/target/aarch64-linux-android/release/ybos-l0 | grep "ELF 64-bit LSB" | grep "ARM aarch64"
