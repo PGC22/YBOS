@@ -124,11 +124,11 @@ pub async fn init_hal() -> Result<()> {
     tracing::info!("[L0/hw] HAL initialized");
 
     #[cfg(target_os = "linux")]
-    tracing::info!("[L0/hw] Linux backend — citire /sys, /proc, ACPI");
+    tracing::info!("[L0/hw] Linux backend - reading /sys, /proc, ACPI");
     #[cfg(not(target_os = "linux"))]
     tracing::info!(
-        "[L0/hw] Non-Linux backend — stub (snapshot gol, doar timestamp). \
-         Pentru telemetrie reala, ruleaza pe Linux."
+        "[L0/hw] Non-Linux backend - stub snapshot with timestamp only. \
+         Run on Linux for real telemetry."
     );
 
     Ok(())

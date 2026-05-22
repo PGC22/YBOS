@@ -1,39 +1,73 @@
-//! L0 SACRED — lista intangibila + tripwire boot.
+//! L0 SACRED list and boot tripwire.
 //!
-//! Portare directa din `core/paths.py` (Python).
-//! Vezi `docs/L0_SACRED.md` pentru rationale + reguli.
+//! The list includes both source files that enforce identity safety and sealed
+//! identity artifacts under `${YBOS_DATA}/identity/...`.
 
-use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::fs;
+use std::path::{Path, PathBuf};
+use thiserror::Error;
 
-use super::paths::{config_dir, remus_root};
+use super::paths::{self, SacredRoots};
 
-// ─────────────────────────────────────────────────────────────────────────────
-// L0_SACRED — lista hardcodata.
-//
-// SINCRONIZATA cu `core/paths.py::L0_SACRED` (Python).
-// Hash hardcodat trebuie sa fie acelasi cu Python `_hash_l0_sacred_list()`.
-// ─────────────────────────────────────────────────────────────────────────────
+pub const L0_SACRED_HASHES_REL: &str = "identity/l0_sacred.hashes.json";
 
 pub const L0_SACRED: &[&str] = &[
-    "config/identity_core.bin",
-    "config/identity_core.txt",
-    "config/sync_key.bin",
-    "core/identity.py",
-    "core/l0_simulator.py",
-    "core/paths.py",
-    "tools/identity_gen.py",
+    "l0/src/identity/sacred.rs",
+    "l0/src/identity/paths.rs",
+    "l0/src/identity/blob.rs",
+    "l0/src/identity/mod.rs",
+    "l0/src/main.rs",
+    "identity/identity_core.bin",
+    "identity/identity_core.salt",
+    "identity/bip39.lock",
+    "identity/k_envelope_a.bin",
+    "identity/k_envelope_b.bin",
+    "identity/k_envelope_c.bin",
+    L0_SACRED_HASHES_REL,
 ];
 
-/// Hash SHA256 al listei L0_SACRED, ordonata si separata cu `|`.
-/// Trebuie sa fie acelasi cu cel din Python `core/paths.py::L0_SACRED_LIST_HASH`.
+/// SHA-256 of the sorted L0_SACRED list joined by `|`.
 pub const L0_SACRED_LIST_HASH: &str =
-    "e63d546799b8c6b626d0a1e977c7de42937ffcb7216c27a025c8e240c8c615a9";
+    "c6eb88cb6bca554e8c185c56bb255e3a927c9fcfb89aa705bb839fa7f618d9bd";
 
-/// Recalculeaza hash-ul listei (folosit la verificarea anti-tamper).
+#[derive(Debug, Error)]
+pub enum Error {
+    #[error("sacred list tampered")]
+    SacredListTampered,
+    #[error("sacred file tampered: {0}")]
+    SacredFileTampered(PathBuf),
+    #[error("sacred write refused: {0}")]
+    SacredViolation(PathBuf),
+    #[error("io error for {path}: {source}")]
+    Io {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("json error for {path}: {source}")]
+    Json {
+        path: PathBuf,
+        #[source]
+        source: serde_json::Error,
+    },
+}
+
+pub type Result<T> = std::result::Result<T, Error>;
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct SavedHashes {
+    pub sacred_list_hash: String,
+    pub files: BTreeMap<String, String>,
+}
+
+#[derive(Debug)]
+pub struct IntegrityReport {
+    pub alerts: Vec<String>,
+}
+
 pub fn hash_l0_sacred_list() -> String {
     let mut sorted: Vec<&str> = L0_SACRED.to_vec();
     sorted.sort();
@@ -43,149 +77,178 @@ pub fn hash_l0_sacred_list() -> String {
     hex::encode(hasher.finalize())
 }
 
-/// True daca lista L0_SACRED nu a fost alterata fata de baseline.
 pub fn verify_l0_list_integrity() -> bool {
     hash_l0_sacred_list() == L0_SACRED_LIST_HASH
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Hash-uri ale fisierelor L0 sacred
-// ─────────────────────────────────────────────────────────────────────────────
+fn hash_file(path: &Path) -> Result<String> {
+    let bytes = fs::read(path).map_err(|source| Error::Io {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    let mut h = Sha256::new();
+    h.update(bytes);
+    Ok(hex::encode(h.finalize()))
+}
 
-/// Pentru fiecare fisier L0 sacred: SHA256 hex sau "MISSING" sau "ERROR:..."
-pub fn compute_l0_files_hash() -> BTreeMap<String, String> {
+fn hashable_sacred() -> impl Iterator<Item = &'static str> {
+    L0_SACRED
+        .iter()
+        .copied()
+        .filter(|rel| *rel != L0_SACRED_HASHES_REL)
+}
+
+pub fn compute_l0_files_hash() -> Result<BTreeMap<String, String>> {
+    compute_l0_files_hash_with_roots(&SacredRoots::current())
+}
+
+pub fn compute_l0_files_hash_with_roots(roots: &SacredRoots) -> Result<BTreeMap<String, String>> {
     let mut out = BTreeMap::new();
-    for rel in L0_SACRED {
-        let full = remus_root().join(rel);
-        let value = match fs::read(&full) {
-            Ok(bytes) => {
-                let mut h = Sha256::new();
-                h.update(&bytes);
-                hex::encode(h.finalize())
-            }
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => "MISSING".to_string(),
-            Err(e) => format!("ERROR:{}", e.kind()),
+    for rel in hashable_sacred() {
+        let full = roots.resolve_sacred_rel(rel);
+        let value = if full.exists() {
+            hash_file(&full)?
+        } else {
+            "MISSING".to_string()
         };
-        out.insert((*rel).to_string(), value);
+        out.insert(rel.to_string(), value);
     }
-    out
+    Ok(out)
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Boot integrity check — tripwire L0
-// ─────────────────────────────────────────────────────────────────────────────
-
-fn hashes_file_path() -> std::path::PathBuf {
-    config_dir().join("l0_sacred.hashes.json")
-}
-
-#[derive(Debug, Default, Serialize, Deserialize)]
-struct SavedHashes(BTreeMap<String, String>);
-
-/// Rezultat al verificarii integritatii L0.
-#[derive(Debug)]
-pub struct IntegrityReport {
-    pub ok: bool,
-    pub alerts: Vec<String>,
-}
-
-/// Tripwire boot. Vezi `core/paths.py::boot_integrity_check()` pentru paritate.
-///
-/// Logica:
-///   1. Verifica `verify_l0_list_integrity()` (anti-tamper pe lista in sine).
-///   2. Daca `config/l0_sacred.hashes.json` lipseste → prima rulare, scrie
-///      baseline si returneaza ok.
-///   3. Daca exista → compara hash-uri. Diferente → alerte critice.
 pub fn boot_integrity_check() -> Result<IntegrityReport> {
-    let mut alerts = Vec::new();
+    boot_integrity_check_with_roots(&SacredRoots::current())
+}
 
-    // Step 1: integritatea listei
+pub fn boot_integrity_check_with_roots(roots: &SacredRoots) -> Result<IntegrityReport> {
     if !verify_l0_list_integrity() {
-        alerts.push(format!(
-            "CRITIC: lista L0_SACRED a fost alterata (hash actual={} expected={})",
-            &hash_l0_sacred_list()[..16],
-            &L0_SACRED_LIST_HASH[..16]
-        ));
-        return Ok(IntegrityReport { ok: false, alerts });
+        return Err(Error::SacredListTampered);
     }
 
-    // Step 2 + 3: hash-uri fisiere
-    let current = compute_l0_files_hash();
-    let hashes_path = hashes_file_path();
+    let current = compute_l0_files_hash_with_roots(roots)?;
+    let hashes_path = roots.hashes_file();
 
     if !hashes_path.exists() {
-        // Prima rulare — scrie baseline.
-        if let Some(parent) = hashes_path.parent() {
-            fs::create_dir_all(parent).context("create config dir")?;
-        }
-        let saved = SavedHashes(current.clone());
-        let json = serde_json::to_string_pretty(&saved.0).context("serialize hashes")?;
-        fs::write(&hashes_path, json).context("write l0_sacred.hashes.json")?;
-        alerts.push("L0 baseline creat (prima rulare).".to_string());
-        return Ok(IntegrityReport { ok: true, alerts });
+        write_hash_manifest(&hashes_path, &current)?;
+        return Ok(IntegrityReport {
+            alerts: vec!["L0 baseline created".to_string()],
+        });
     }
 
-    // Comparare cu baseline existent.
-    let saved_text = fs::read_to_string(&hashes_path).context("read l0_sacred.hashes.json")?;
-    let saved: BTreeMap<String, String> =
-        serde_json::from_str(&saved_text).context("parse l0_sacred.hashes.json")?;
+    let saved = read_hash_manifest(&hashes_path)?;
+    if saved.sacred_list_hash != L0_SACRED_LIST_HASH {
+        return Err(Error::SacredListTampered);
+    }
 
-    let mut ok = true;
-    for rel in L0_SACRED {
-        let key = (*rel).to_string();
-        let cur = current.get(&key).cloned().unwrap_or_else(|| "MISSING".to_string());
-        let sav = saved.get(&key).cloned().unwrap_or_else(|| "MISSING".to_string());
+    for rel in hashable_sacred() {
+        let cur = current
+            .get(rel)
+            .cloned()
+            .unwrap_or_else(|| "MISSING".to_string());
+        let sav = saved
+            .files
+            .get(rel)
+            .cloned()
+            .unwrap_or_else(|| "MISSING".to_string());
         if cur != sav {
-            alerts.push(format!(
-                "L0 ALTERAT: {} (current={}... saved={}...)",
-                rel,
-                &cur.chars().take(12).collect::<String>(),
-                &sav.chars().take(12).collect::<String>()
-            ));
-            ok = false;
+            return Err(Error::SacredFileTampered(roots.resolve_sacred_rel(rel)));
         }
     }
 
-    Ok(IntegrityReport { ok, alerts })
+    Ok(IntegrityReport { alerts: Vec::new() })
 }
 
-/// Rescrie baseline-ul cu hash-urile actuale. Apelata manual dupa modificare
-/// intentionata a unui L0 sacred file.
-///
-/// `force` trebuie sa fie `true` — protectie minima impotriva apelului accidental.
-#[allow(dead_code)]
 pub fn update_l0_baseline(force: bool) -> Result<()> {
+    update_l0_baseline_with_roots(force, &SacredRoots::current())
+}
+
+pub fn update_l0_baseline_with_roots(force: bool, roots: &SacredRoots) -> Result<()> {
     if !force {
-        return Err(anyhow!("update_l0_baseline necesita force=true"));
+        return Err(Error::SacredViolation(roots.hashes_file()));
     }
-    let hashes_path = hashes_file_path();
-    if let Some(parent) = hashes_path.parent() {
-        fs::create_dir_all(parent)?;
+    if !verify_l0_list_integrity() {
+        return Err(Error::SacredListTampered);
     }
-    let current = compute_l0_files_hash();
-    let json = serde_json::to_string_pretty(&current)?;
-    fs::write(&hashes_path, json)?;
+    let current = compute_l0_files_hash_with_roots(roots)?;
+    write_hash_manifest(&roots.hashes_file(), &current)
+}
+
+fn read_hash_manifest(path: &Path) -> Result<SavedHashes> {
+    let saved_text = fs::read_to_string(path).map_err(|source| Error::Io {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    serde_json::from_str(&saved_text).map_err(|source| Error::Json {
+        path: path.to_path_buf(),
+        source,
+    })
+}
+
+fn write_hash_manifest(path: &Path, files: &BTreeMap<String, String>) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|source| Error::Io {
+            path: parent.to_path_buf(),
+            source,
+        })?;
+    }
+
+    let saved = SavedHashes {
+        sacred_list_hash: L0_SACRED_LIST_HASH.to_string(),
+        files: files.clone(),
+    };
+    let json = serde_json::to_vec_pretty(&saved).map_err(|source| Error::Json {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    fs::write(path, json).map_err(|source| Error::Io {
+        path: path.to_path_buf(),
+        source,
+    })
+}
+
+/// Guard used by enrollment writes. Initial onboarding may create missing
+/// sacred artifacts, but it must never overwrite a sealed artifact.
+pub fn refuse_existing_sacred_write(path: &Path) -> Result<()> {
+    refuse_existing_sacred_write_with_roots(path, &SacredRoots::current())
+}
+
+pub fn refuse_existing_sacred_write_with_roots(path: &Path, roots: &SacredRoots) -> Result<()> {
+    if path.exists() && paths::is_l0_sacred_with_roots(path, roots) {
+        return Err(Error::SacredViolation(path.to_path_buf()));
+    }
     Ok(())
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Tests
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
+    use tempfile::TempDir;
+
+    fn roots() -> (TempDir, SacredRoots) {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = tmp.path().join("repo");
+        let data = tmp.path().join("data");
+        fs::create_dir_all(repo.join("l0/src/identity")).unwrap();
+        fs::create_dir_all(repo.join("l0/src")).unwrap();
+        fs::create_dir_all(data.join("identity")).unwrap();
+        let roots = SacredRoots {
+            repo_root: repo,
+            ybos_data_root: data,
+        };
+        for rel in hashable_sacred() {
+            let full = roots.resolve_sacred_rel(rel);
+            if let Some(parent) = full.parent() {
+                fs::create_dir_all(parent).unwrap();
+            }
+            fs::write(&full, format!("fixture:{rel}")).unwrap();
+        }
+        (tmp, roots)
+    }
 
     #[test]
     fn list_hash_matches_baseline() {
-        // Daca acest test pica, L0_SACRED a fost modificat dar
-        // L0_SACRED_LIST_HASH nu a fost actualizat. Sau invers.
-        // Sau lista nu mai e in sync cu cea Python.
-        assert_eq!(
-            hash_l0_sacred_list(),
-            L0_SACRED_LIST_HASH,
-            "L0_SACRED list hash diverged. Recalculate via hash_l0_sacred_list() and update L0_SACRED_LIST_HASH constant. Verifica si paritatea cu Python core/paths.py::L0_SACRED_LIST_HASH."
-        );
+        assert_eq!(hash_l0_sacred_list(), L0_SACRED_LIST_HASH);
     }
 
     #[test]
@@ -197,34 +260,51 @@ mod tests {
     }
 
     #[test]
-    fn list_matches_python() {
-        // Hash hardcodat trebuie sa fie identic cu Python.
-        // Calculat in Python: sha256("|".join(sorted(L0_SACRED))).hexdigest()
-        // Daca aici pica si list_hash_matches_baseline pica → e bug.
-        // Daca aici pica si list_hash_matches_baseline trece → Python si Rust
-        // au liste diferite.
-        let expected = "e63d546799b8c6b626d0a1e977c7de42937ffcb7216c27a025c8e240c8c615a9";
-        assert_eq!(hash_l0_sacred_list(), expected);
-    }
-
-    #[test]
-    fn list_size_matches_python() {
-        assert_eq!(L0_SACRED.len(), 7);
-    }
-
-    #[test]
-    fn list_contains_all_expected() {
+    fn list_contains_ybos_layout() {
         let expected = [
-            "core/l0_simulator.py",
-            "core/identity.py",
-            "core/paths.py",
-            "tools/identity_gen.py",
-            "config/identity_core.txt",
-            "config/identity_core.bin",
-            "config/sync_key.bin",
+            "l0/src/identity/sacred.rs",
+            "l0/src/identity/paths.rs",
+            "l0/src/identity/blob.rs",
+            "l0/src/identity/mod.rs",
+            "l0/src/main.rs",
+            "identity/identity_core.bin",
+            "identity/identity_core.salt",
+            "identity/bip39.lock",
+            "identity/k_envelope_a.bin",
+            "identity/k_envelope_b.bin",
+            "identity/k_envelope_c.bin",
+            L0_SACRED_HASHES_REL,
         ];
-        for e in expected {
-            assert!(L0_SACRED.contains(&e), "lipseste din L0_SACRED: {}", e);
+        assert_eq!(L0_SACRED, expected);
+    }
+
+    #[test]
+    fn tripwire_detects_file_modification() {
+        let (_tmp, roots) = roots();
+        boot_integrity_check_with_roots(&roots).unwrap();
+
+        let target = roots.resolve_sacred_rel("l0/src/identity/blob.rs");
+        let mut f = fs::OpenOptions::new().append(true).open(&target).unwrap();
+        writeln!(f, "tampered").unwrap();
+
+        let err = boot_integrity_check_with_roots(&roots).unwrap_err();
+        match err {
+            Error::SacredFileTampered(path) => assert_eq!(path, target),
+            other => panic!("unexpected error: {other:?}"),
         }
+    }
+
+    #[test]
+    fn tripwire_detects_manifest_list_hash_tamper() {
+        let (_tmp, roots) = roots();
+        boot_integrity_check_with_roots(&roots).unwrap();
+
+        let manifest = roots.hashes_file();
+        let mut saved = read_hash_manifest(&manifest).unwrap();
+        saved.sacred_list_hash = "0".repeat(64);
+        fs::write(&manifest, serde_json::to_vec_pretty(&saved).unwrap()).unwrap();
+
+        let err = boot_integrity_check_with_roots(&roots).unwrap_err();
+        assert!(matches!(err, Error::SacredListTampered));
     }
 }

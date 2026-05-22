@@ -1,24 +1,13 @@
-//! Remus L0 — The Reflex Layer.
+//! YBOS L0 - The Reflex Layer.
 //!
 //! Daemon kernel-adjacent care:
-//!   - verifica identitatea (HMAC pe identity_core.bin) la boot
+//!   - verifica integritatea L0 sacred la boot
 //!   - citeste hardware direct (/sys, ACPI, cpufreq) [linux only]
-//!   - publica telemetrie pe MQTT (`remus/telemetry/*`)
-//!   - expune gRPC (IdentityService, TelemetryService) catre L1 (Python)
+//!   - publica telemetrie pe MQTT (`ybos/telemetry/*`)
+//!   - expune gRPC (IdentityService, TelemetryService) catre L1
 //!   - executa reflexe sub-ms (CPU throttle, fan curve, brightness)
 //!
-//! Vezi `docs/L0_SACRED.md`, CLAUDE.md §2 (arhitectura 3-layer brain),
-//! CLAUDE.md §4 (decizii arhitecturale), Faza 6 din §6 (acest crate).
-//!
-//! Sub-sprints:
-//!   S6.0  Scaffold (in lucru)
-//!   S6.1  Identity + boot integrity (portat din core/paths.py)
-//!   S6.2  HAL trait + telemetrie statica
-//!   S6.3  MQTT broker (rumqttd embedded)
-//!   S6.4  gRPC server (tonic)
-//!   S6.5  Reflex actions
-//!   S6.6  Python L1 client (`core/l0_client.py`)
-//!   S6.7  systemd service + NixOS integration
+//! Vezi `docs/L0_SACRED.md` si `docs/ARCHITECTURE.md`.
 
 use anyhow::Result;
 use tracing::{info, warn};
@@ -31,7 +20,7 @@ mod reflex;
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 2)]
 async fn main() -> Result<()> {
-    // Logging structurat. RUST_LOG=info,remus_l0=debug pentru verbose.
+    // Structured logging. RUST_LOG=info,ybos_l0=debug for verbose output.
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
@@ -40,10 +29,12 @@ async fn main() -> Result<()> {
         .with_target(false)
         .init();
 
-    info!("[L0] Remus Reflex Layer v{} starting", env!("CARGO_PKG_VERSION"));
+    info!(
+        "[L0] YBOS Reflex Layer v{} starting",
+        env!("CARGO_PKG_VERSION")
+    );
 
-    // ── Boot sequence ────────────────────────────────────────────────────────
-    // S6.1 va popula real. Acum doar log placeholders.
+    // Boot sequence.
     identity::boot_check().await?;
     hw::init_hal().await?;
     bus::start_mqtt_broker().await?;
@@ -51,8 +42,7 @@ async fn main() -> Result<()> {
 
     info!("[L0] Boot complete. Entering reflex loop.");
 
-    // ── Reflex loop ──────────────────────────────────────────────────────────
-    // Asculta semnale OS, ruleaza telemetrie + reflexe.
+    // Reflex loop.
     tokio::select! {
         res = reflex::run() => {
             if let Err(e) = res {

@@ -1,51 +1,90 @@
-//! RemusPaths — singura sursa de adevar pentru cai in L0.
+//! Path helpers for L0 identity data.
 //!
-//! Portare din `core/paths.py` (Python). Detecteaza REMUS_ROOT din env var,
-//! fallback la cwd, fallback la `/opt/remus` (production NixOS).
+//! Runtime identity artifacts live under `${YBOS_DATA}/identity/...`. Source
+//! files that are part of the boot tripwire are resolved from the repository
+//! root, while generated identity files are resolved from `YBOS_DATA`.
 
 use std::env;
 use std::path::{Component, Path, PathBuf};
 use std::sync::OnceLock;
 
-/// Detecteaza REMUS_ROOT.
-///
-/// Prioritate:
-///   1. env REMUS_ROOT
-///   2. current working directory
-///   3. /opt/remus (fallback production)
-fn detect_remus_root() -> PathBuf {
-    if let Ok(v) = env::var("REMUS_ROOT") {
+pub const YBOS_DATA_ENV: &str = "YBOS_DATA";
+pub const YBOS_REPO_ROOT_ENV: &str = "YBOS_REPO_ROOT";
+
+fn detect_ybos_data_root() -> PathBuf {
+    if let Ok(v) = env::var(YBOS_DATA_ENV) {
         return PathBuf::from(v);
     }
     if let Ok(cwd) = env::current_dir() {
+        return cwd.join(".ybos-data");
+    }
+    PathBuf::from("/var/lib/ybos")
+}
+
+fn detect_repo_root() -> PathBuf {
+    if let Ok(v) = env::var(YBOS_REPO_ROOT_ENV) {
+        return PathBuf::from(v);
+    }
+    if let Ok(cwd) = env::current_dir() {
+        if cwd.file_name().and_then(|s| s.to_str()) == Some("l0") {
+            if let Some(parent) = cwd.parent() {
+                return parent.to_path_buf();
+            }
+        }
         return cwd;
     }
-    PathBuf::from("/opt/remus")
+    PathBuf::from(".")
 }
 
-static REMUS_ROOT: OnceLock<PathBuf> = OnceLock::new();
+static YBOS_DATA_ROOT: OnceLock<PathBuf> = OnceLock::new();
+static REPO_ROOT: OnceLock<PathBuf> = OnceLock::new();
 
-pub fn remus_root() -> &'static Path {
-    REMUS_ROOT.get_or_init(detect_remus_root)
+pub fn ybos_data_root() -> &'static Path {
+    YBOS_DATA_ROOT.get_or_init(detect_ybos_data_root)
 }
 
-pub fn config_dir() -> PathBuf {
-    remus_root().join("config")
+pub fn repo_root() -> &'static Path {
+    REPO_ROOT.get_or_init(detect_repo_root)
 }
 
-#[allow(dead_code)] // folosit de S6.2+ pentru paths catre core/
-pub fn core_dir() -> PathBuf {
-    remus_root().join("core")
+pub fn identity_dir() -> PathBuf {
+    ybos_data_root().join("identity")
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Normalize path — fara filesystem touch (functioneaza si pe paths inexistente)
-// ─────────────────────────────────────────────────────────────────────────────
+pub fn identity_blob() -> PathBuf {
+    identity_dir().join("identity_core.bin")
+}
 
-/// Normalizeaza un path: rezolva `.` si `..` lexical, fara sa atinga FS.
+pub fn identity_salt() -> PathBuf {
+    identity_dir().join("identity_core.salt")
+}
+
+pub fn bip39_lock() -> PathBuf {
+    identity_dir().join("bip39.lock")
+}
+
+pub fn envelope_a() -> PathBuf {
+    identity_dir().join("k_envelope_a.bin")
+}
+
+#[allow(dead_code)]
+pub fn envelope_b() -> PathBuf {
+    identity_dir().join("k_envelope_b.bin")
+}
+
+#[allow(dead_code)]
+pub fn envelope_c() -> PathBuf {
+    identity_dir().join("k_envelope_c.bin")
+}
+
+pub fn l0_sacred_hashes() -> PathBuf {
+    identity_dir().join("l0_sacred.hashes.json")
+}
+
+/// Normalize a path lexically without touching the filesystem.
 ///
-/// Limitare: NU urmareste symlinks (canonicalize face asta, dar cere ca path-ul
-/// sa existe). Pentru anti-symlink, vezi `is_symlink_to_sacred` viitor.
+/// This keeps tests and pre-create checks deterministic for paths that do not
+/// exist yet. Symlink hardening belongs to the platform policy layer.
 pub fn normalize_lexical(path: &Path) -> PathBuf {
     let mut out = PathBuf::new();
     for c in path.components() {
@@ -62,55 +101,73 @@ pub fn normalize_lexical(path: &Path) -> PathBuf {
     out
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// is_l0_sacred — refuz sintactic. Anti-traversal + fail-closed.
-// ─────────────────────────────────────────────────────────────────────────────
+#[derive(Debug, Clone)]
+pub struct SacredRoots {
+    pub repo_root: PathBuf,
+    pub ybos_data_root: PathBuf,
+}
+
+impl SacredRoots {
+    pub fn current() -> Self {
+        Self {
+            repo_root: repo_root().to_path_buf(),
+            ybos_data_root: ybos_data_root().to_path_buf(),
+        }
+    }
+
+    pub fn identity_dir(&self) -> PathBuf {
+        self.ybos_data_root.join("identity")
+    }
+
+    pub fn hashes_file(&self) -> PathBuf {
+        self.identity_dir().join("l0_sacred.hashes.json")
+    }
+
+    pub fn resolve_sacred_rel(&self, rel: &str) -> PathBuf {
+        if rel.starts_with("identity/") {
+            self.ybos_data_root.join(rel)
+        } else {
+            self.repo_root.join(rel)
+        }
+    }
+}
 
 use super::sacred::L0_SACRED;
 
-/// Verifica daca `path` (absolut sau relativ la REMUS_ROOT) apartine L0_SACRED.
-///
-/// Returneaza `true` daca:
-///   - path-ul, dupa normalizare lexicala, corespunde unei intrari din
-///     L0_SACRED relativ la REMUS_ROOT.
-///   - orice eroare (path malformat, prefix invalid) → fail-closed → true.
-///
-/// Returneaza `false` doar daca path-ul e clar non-sacred.
-#[allow(dead_code)] // consumat de S6.5+ (reflex actions, file ops checks)
+/// Syntactic L0 SACRED check for absolute paths or paths relative to the repo
+/// root / YBOS_DATA root. Errors and ambiguous ownership fail closed.
+#[allow(dead_code)]
 pub fn is_l0_sacred(path: &Path) -> bool {
-    let absolute = if path.is_absolute() {
-        path.to_path_buf()
-    } else {
-        remus_root().join(path)
-    };
-    let normalized = normalize_lexical(&absolute);
-
-    let root_normalized = normalize_lexical(remus_root());
-
-    // Strip prefix REMUS_ROOT
-    let rel = match normalized.strip_prefix(&root_normalized) {
-        Ok(r) => r,
-        Err(_) => {
-            // Path nu e sub REMUS_ROOT — nu poate fi L0 sacred prin definitie.
-            return false;
-        }
-    };
-
-    // Cross-platform: convert separators to forward slash for matching.
-    let rel_str: String = rel
-        .components()
-        .filter_map(|c| match c {
-            Component::Normal(s) => s.to_str().map(String::from),
-            _ => None,
-        })
-        .collect::<Vec<_>>()
-        .join("/");
-
-    L0_SACRED.iter().any(|sacred| *sacred == rel_str)
+    is_l0_sacred_with_roots(path, &SacredRoots::current())
 }
 
-/// Filtreaza o lista de paths, eliminand pe cele L0 sacred.
-#[allow(dead_code)] // consumat de S6.5+
+pub fn is_l0_sacred_with_roots(path: &Path, roots: &SacredRoots) -> bool {
+    if path.as_os_str().is_empty() {
+        return true;
+    }
+
+    let candidates = if path.is_absolute() {
+        vec![normalize_lexical(path)]
+    } else {
+        vec![
+            normalize_lexical(&roots.repo_root.join(path)),
+            normalize_lexical(&roots.ybos_data_root.join(path)),
+        ]
+    };
+
+    for candidate in candidates {
+        for sacred in L0_SACRED {
+            let sacred_abs = normalize_lexical(&roots.resolve_sacred_rel(sacred));
+            if candidate == sacred_abs {
+                return true;
+            }
+        }
+    }
+
+    false
+}
+
+#[allow(dead_code)]
 pub fn filter_l0_sacred<'a, I, P>(paths: I) -> Vec<PathBuf>
 where
     I: IntoIterator<Item = &'a P>,
@@ -123,85 +180,84 @@ where
         .collect()
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Tests
-// ─────────────────────────────────────────────────────────────────────────────
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn root() -> PathBuf {
-        // Folosim un root sintetic pentru tests determinist
-        if cfg!(windows) {
-            PathBuf::from(r"C:\test_remus")
+    fn roots() -> SacredRoots {
+        let base = if cfg!(windows) {
+            PathBuf::from(r"C:\ybos-test")
         } else {
-            PathBuf::from("/test_remus")
+            PathBuf::from("/ybos-test")
+        };
+        SacredRoots {
+            repo_root: base.join("repo"),
+            ybos_data_root: base.join("data"),
         }
     }
 
     fn check(rel: &str) -> bool {
-        let p = root().join(rel.replace('/', std::path::MAIN_SEPARATOR_STR.as_ref()));
-        is_l0_sacred_with_root(&p, &root())
-    }
-
-    /// Test helper: is_l0_sacred dar cu root explicit (evita OnceLock global).
-    fn is_l0_sacred_with_root(path: &Path, root: &Path) -> bool {
-        let absolute = if path.is_absolute() {
-            path.to_path_buf()
-        } else {
-            root.join(path)
-        };
-        let normalized = normalize_lexical(&absolute);
-        let root_normalized = normalize_lexical(root);
-        let rel = match normalized.strip_prefix(&root_normalized) {
-            Ok(r) => r,
-            Err(_) => return false,
-        };
-        let rel_str: String = rel
-            .components()
-            .filter_map(|c| match c {
-                Component::Normal(s) => s.to_str().map(String::from),
-                _ => None,
-            })
-            .collect::<Vec<_>>()
-            .join("/");
-        L0_SACRED.iter().any(|s| *s == rel_str)
+        is_l0_sacred_with_roots(Path::new(rel), &roots())
     }
 
     #[test]
-    fn relative_sacred_paths_match() {
-        assert!(check("core/identity.py"));
-        assert!(check("core/paths.py"));
-        assert!(check("core/l0_simulator.py"));
-        assert!(check("tools/identity_gen.py"));
-        assert!(check("config/identity_core.txt"));
-        assert!(check("config/identity_core.bin"));
-        assert!(check("config/sync_key.bin"));
+    fn source_sacred_paths_match() {
+        assert!(check("l0/src/identity/sacred.rs"));
+        assert!(check("l0/src/identity/paths.rs"));
+        assert!(check("l0/src/identity/blob.rs"));
+        assert!(check("l0/src/identity/mod.rs"));
+        assert!(check("l0/src/main.rs"));
+    }
+
+    #[test]
+    fn identity_sacred_paths_match() {
+        assert!(check("identity/identity_core.bin"));
+        assert!(check("identity/identity_core.salt"));
+        assert!(check("identity/bip39.lock"));
+        assert!(check("identity/k_envelope_a.bin"));
+        assert!(check("identity/k_envelope_b.bin"));
+        assert!(check("identity/k_envelope_c.bin"));
+        assert!(check("identity/l0_sacred.hashes.json"));
     }
 
     #[test]
     fn non_sacred_paths_pass() {
-        assert!(!check("core/orchestrator.py"));
-        assert!(!check("skills/web_search.py"));
-        assert!(!check("web_interface.py"));
-        assert!(!check("config/settings.json"));
+        assert!(!check("l0/src/hw/mod.rs"));
+        assert!(!check("identity/profile.json"));
+        assert!(!check("settings/settings.json"));
+    }
+
+    #[test]
+    fn absolute_identity_path_matches() {
+        let p = roots()
+            .ybos_data_root
+            .join("identity")
+            .join("identity_core.bin");
+        assert!(is_l0_sacred_with_roots(&p, &roots()));
     }
 
     #[test]
     fn traversal_resolves_to_sacred() {
-        let p = root().join("skills").join("..").join("core").join("identity.py");
-        assert!(is_l0_sacred_with_root(&p, &root()));
+        let p = Path::new("identity")
+            .join("tmp")
+            .join("..")
+            .join("identity_core.bin");
+        assert!(is_l0_sacred_with_roots(&p, &roots()));
     }
 
     #[test]
-    fn outside_root_not_sacred() {
+    fn outside_roots_not_sacred() {
         let outside = if cfg!(windows) {
-            PathBuf::from(r"C:\some\other\dir\identity.py")
+            PathBuf::from(r"C:\some\other\dir\identity_core.bin")
         } else {
-            PathBuf::from("/tmp/identity.py")
+            PathBuf::from("/tmp/identity_core.bin")
         };
-        assert!(!is_l0_sacred_with_root(&outside, &root()));
+        assert!(!is_l0_sacred_with_roots(&outside, &roots()));
+    }
+
+    #[test]
+    fn empty_path_fails_closed() {
+        assert!(is_l0_sacred_with_roots(Path::new(""), &roots()));
     }
 
     #[test]

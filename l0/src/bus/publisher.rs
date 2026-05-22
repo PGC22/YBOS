@@ -9,7 +9,7 @@ use crate::hw::TelemetrySnapshot;
 
 use super::topics;
 
-const CLIENT_ID: &str = "remus-l0-publisher";
+const CLIENT_ID: &str = "ybos-l0-publisher";
 
 /// Wrapper care expune doar publish-ul, fara sa scape detalii rumqttc.
 pub struct Publisher {
@@ -24,8 +24,8 @@ impl Publisher {
         opts.set_keep_alive(Duration::from_secs(30));
         opts.set_clean_session(true);
 
-        // Last Will and Testament: daca publisherul moare brusc,
-        // broker-ul publica automat "offline" pe remus/status (retain).
+        // Last Will and Testament: if the publisher exits abruptly, the broker
+        // publishes "offline" on the retained status topic.
         opts.set_last_will(rumqttc::LastWill::new(
             topics::STATUS,
             b"offline".to_vec(),
@@ -63,7 +63,7 @@ impl Publisher {
         Ok(())
     }
 
-    /// Anunta offline (retain) — apelat manual la shutdown grácil.
+    /// Anunta offline (retain) - apelat manual la shutdown.
     pub async fn announce_offline(&self) -> Result<()> {
         self.client
             .publish(topics::STATUS, QoS::AtLeastOnce, true, b"offline".as_ref())
@@ -103,7 +103,10 @@ impl Publisher {
             self.publish_at_most(topics::TELEM_BACKLIGHT, payload)
                 .await?;
         }
-        debug!("[L0/bus] snapshot publicat ({} bytes total agregat)", snap_size(snap));
+        debug!(
+            "[L0/bus] snapshot publicat ({} bytes total agregat)",
+            snap_size(snap)
+        );
         Ok(())
     }
 

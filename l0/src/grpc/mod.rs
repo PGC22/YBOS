@@ -24,7 +24,7 @@ mod telemetry_service;
 
 /// Codegen prost — includem modulul generat de `tonic-build` (vezi `build.rs`).
 pub mod pb {
-    tonic::include_proto!("remus.l0.v1");
+    tonic::include_proto!("ybos.l0.v1");
 }
 
 pub const GRPC_LISTEN: &str = "127.0.0.1:50051";

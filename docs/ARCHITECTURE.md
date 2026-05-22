@@ -93,6 +93,12 @@
 - BIP39 24 cuvinte = paper backup, afișat o dată la onboarding, scris pe hârtie de user
 - `identity_core.bin` = nucleul identitar (nume, UUID, public part al biometric template), semnat HMAC cu K
 
+**Plan binding TEE pentru faza AOSP/device (research notes, fără implementare în Y1):**
+- L0 expune în Y1 doar trait-ul `TeeSeal`; implementarea reală se adaugă când există target AOSP și device.
+- Implementarea va prefera Android Keystore/StrongBox când hardware-ul îl expune, cu fallback vendor TEE/HAL izolat în `l0/src/hw/`.
+- Blob-ul envelope B trebuie să fie opac pentru codul generic: L0 primește `seal(K, device_fingerprint)` și `unseal(blob)`, fără constante per-device în identity.
+- Testele Y1 folosesc doar envelope A; envelope B nu blochează onboarding pe Linux dev.
+
 ### 2.2 L0 SACRED
 - Lista hardcoded în `l0/src/identity/sacred.rs`
 - Refuz sintactic la orice scriere (nu cerere de autorizare)
@@ -229,7 +235,7 @@ Rămâne ca **direcție de research** dacă în viitor apare:
 
 Beneficiu teoretic: laptopul **nu vede niciodată plaintext**, doar activations criptate-greu-de-invertit. Privacy story 100% chiar pe Tier 2 (App Mode).
 
-George face research independent pe această direcție. Documentăm aici ca semn de întrebare deschis.
+Rămâne direcție de research independentă și nu intră în Y1.
 
 ---
 
@@ -342,7 +348,7 @@ Nu MVP.
 - ❓ **UI framework mobile** — Slint vs Jetpack Compose binding — TBD când ajungem la UI
 - ❓ **LLM model size primary** — 3B vs 8B trade-off RAM/quality
 - ❓ **Vector DB choice** — sqlite-vss vs qdrant embedded — benchmark needed
-- ❓ **Split inference layer-by-layer** (vezi §4.5) — research George, posibil viitor
+- ❓ **Split inference layer-by-layer** (vezi §4.5) — research, posibil viitor
 - ❓ **VM Mode hardware support** — SEV-SNP/TDX disponibilitate consumer hw — research când ajungem la Tier 1
-- ❓ **License** — Apache 2.0 vs MIT vs Proprietary — TBD George decision business model
+- ❓ **License** — Apache 2.0 vs MIT vs Proprietary — TBD la decizia de business
 - ❓ **Nume YBOS final + branding** — TBD post-MVP technical bring-up

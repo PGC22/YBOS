@@ -11,6 +11,15 @@ config/bip39.lock
 config/profile.json
 config/settings.json
 config/l0_sacred.hashes.json
+.ybos-data/
+ybos-data/
+identity/identity_core.bin
+identity/identity_core.salt
+identity/k_envelope_*.bin
+identity/bip39.lock
+identity/l0_sacred.hashes.json
+identity/profile.json
+identity/settings.json
 
 # Keys & certs
 keys/

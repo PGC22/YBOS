@@ -1,103 +1,104 @@
-//! Parse + verify `config/identity_core.bin`.
+//! Signed identity blob format.
 //!
-//! Format blob (acelasi cu `tools/identity_gen.py`):
-//!
-//! ```text
-//!   offset  size  content
-//!   0       8     MAGIC = b"REMUS_ID"
-//!   8       4     VERSION (big-endian u32)
-//!   12      8     TIMESTAMP (big-endian u64)
-//!   20      4     PAYLOAD_LEN (big-endian u32)
-//!   24      N     PAYLOAD (JSON UTF-8)
-//!   24+N    32    SIG = HMAC-SHA256(key_bytes, payload_bytes)
-//! ```
-//!
-//! `key_bytes` = continutul textual al `config/sync_key.bin`, trimmed,
-//! ca UTF-8 bytes (NU decoded din hex — paritate cu Python).
+//! `identity_core.bin` contains only public identity metadata and an
+//! HMAC-SHA256 signature over that metadata. The HMAC key is K-master, which is
+//! generated during onboarding and recovered through an envelope at unlock time.
 
 use anyhow::{anyhow, Context, Result};
 use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use std::fs;
+use uuid::Uuid;
 
-use super::paths::config_dir;
+use super::paths;
 
-const MAGIC: &[u8; 8] = b"REMUS_ID";
-const HEADER_LEN: usize = 24; // 8 magic + 4 ver + 8 ts + 4 len
-const SIG_LEN: usize = 32; // HMAC-SHA256
+const MAGIC: &[u8; 8] = b"YBOS_ID1";
+const HEADER_LEN: usize = 24; // 8 magic + 4 version + 8 timestamp + 4 len
+const SIG_LEN: usize = 32;
 
 type HmacSha256 = Hmac<Sha256>;
 
-/// Payload deserializat din blob.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct IdentityPayload {
-    pub version: u32,
-    pub generated_at: f64,
-    pub remus_id: String,
-    pub device_id: String,
-    pub device_role: String,
-    pub creator: String,
-    pub nucleus: String,
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Identity {
+    pub name: String,
+    pub uuid: Uuid,
+    pub biometric_template_public: Vec<u8>,
+    pub created_at: u64,
 }
 
-/// Identitate verificata — payload + metadata din header.
+impl Identity {
+    pub fn new(
+        name: impl Into<String>,
+        biometric_template_public: Vec<u8>,
+        created_at: u64,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            uuid: Uuid::new_v4(),
+            biometric_template_public,
+            created_at,
+        }
+    }
+
+    pub fn uuid_short(&self) -> String {
+        self.uuid.simple().to_string().chars().take(8).collect()
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct VerifiedIdentity {
     pub header_version: u32,
-    #[allow(dead_code)] // expus via gRPC IdentityService in S6.4
     pub header_timestamp: u64,
-    pub payload: IdentityPayload,
+    pub identity: Identity,
 }
 
-impl VerifiedIdentity {
-    pub fn remus_id_short(&self) -> String {
-        self.payload.remus_id.chars().take(8).collect()
-    }
-}
-
-/// Citeste si verifica `identity_core.bin`. Returneaza identitatea verificata
-/// SAU eroare descriptiva.
-pub fn load_and_verify() -> Result<VerifiedIdentity> {
-    let bin_path = config_dir().join("identity_core.bin");
-    let key_path = config_dir().join("sync_key.bin");
-
+pub fn load_and_verify(key: &[u8; 32]) -> Result<VerifiedIdentity> {
+    let bin_path = paths::identity_blob();
     if !bin_path.exists() {
         return Err(anyhow!(
-            "identity_core.bin lipsa la {}. Ruleaza: python tools/identity_gen.py",
+            "identity_core.bin missing at {}. Run onboarding first.",
             bin_path.display()
-        ));
-    }
-    if !key_path.exists() {
-        return Err(anyhow!(
-            "sync_key.bin lipsa la {}. Ruleaza: python tools/identity_gen.py",
-            key_path.display()
         ));
     }
 
     let blob = fs::read(&bin_path).with_context(|| format!("read {}", bin_path.display()))?;
-    let key_text =
-        fs::read_to_string(&key_path).with_context(|| format!("read {}", key_path.display()))?;
-
-    verify_blob(&blob, key_text.trim().as_bytes())
+    verify_blob(&blob, key)
 }
 
-/// Verifica un blob raw cu o cheie data. Folosit si de tests cu fixture.
-pub fn verify_blob(blob: &[u8], key_bytes: &[u8]) -> Result<VerifiedIdentity> {
+pub fn build_blob(identity: &Identity, key: &[u8; 32]) -> Result<Vec<u8>> {
+    let payload_bytes = serde_json::to_vec(identity).context("serialize identity payload")?;
+    let payload_len = payload_bytes.len() as u32;
+
+    let mut blob = Vec::with_capacity(HEADER_LEN + payload_bytes.len() + SIG_LEN);
+    blob.extend_from_slice(MAGIC);
+    blob.extend_from_slice(&1u32.to_be_bytes());
+    blob.extend_from_slice(&identity.created_at.to_be_bytes());
+    blob.extend_from_slice(&payload_len.to_be_bytes());
+    blob.extend_from_slice(&payload_bytes);
+
+    let mut mac =
+        HmacSha256::new_from_slice(key).map_err(|e| anyhow!("hmac init failed: {}", e))?;
+    mac.update(&payload_bytes);
+    let sig = mac.finalize().into_bytes();
+    blob.extend_from_slice(&sig);
+
+    Ok(blob)
+}
+
+pub fn verify_blob(blob: &[u8], key: &[u8; 32]) -> Result<VerifiedIdentity> {
     if blob.len() < HEADER_LEN + SIG_LEN {
         return Err(anyhow!(
-            "blob prea scurt: {} bytes (minim {})",
+            "blob too short: {} bytes (minimum {})",
             blob.len(),
             HEADER_LEN + SIG_LEN
         ));
     }
 
-    // MAGIC
     if &blob[0..8] != MAGIC {
-        return Err(anyhow!("magic bytes invalide: {:?}", &blob[0..8]));
+        return Err(anyhow!("invalid magic bytes: {:?}", &blob[0..8]));
     }
 
-    // Header (big-endian)
     let version = u32::from_be_bytes(blob[8..12].try_into().unwrap());
     let timestamp = u64::from_be_bytes(blob[12..20].try_into().unwrap());
     let payload_len = u32::from_be_bytes(blob[20..24].try_into().unwrap()) as usize;
@@ -115,133 +116,85 @@ pub fn verify_blob(blob: &[u8], key_bytes: &[u8]) -> Result<VerifiedIdentity> {
     let payload_bytes = &blob[HEADER_LEN..HEADER_LEN + payload_len];
     let sig_stored = &blob[HEADER_LEN + payload_len..];
 
-    // HMAC verify (constant-time prin `Mac::verify_slice`)
-    let mut mac = HmacSha256::new_from_slice(key_bytes)
-        .map_err(|e| anyhow!("hmac init failed: {}", e))?;
+    let mut mac =
+        HmacSha256::new_from_slice(key).map_err(|e| anyhow!("hmac init failed: {}", e))?;
     mac.update(payload_bytes);
     mac.verify_slice(sig_stored)
-        .map_err(|_| anyhow!("semnatura identity_core.bin INVALIDA — blob alterat"))?;
+        .map_err(|_| anyhow!("identity_core.bin signature invalid"))?;
 
-    // Deserialize JSON
-    let payload: IdentityPayload =
-        serde_json::from_slice(payload_bytes).context("parse payload JSON")?;
+    let identity: Identity =
+        serde_json::from_slice(payload_bytes).context("parse identity payload JSON")?;
 
     Ok(VerifiedIdentity {
         header_version: version,
         header_timestamp: timestamp,
-        payload,
+        identity,
     })
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Tests cu fixture (nu cere fisiere reale pe disk)
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use hmac::Mac;
 
-    fn build_fixture_blob(payload_json: &str, key_bytes: &[u8]) -> Vec<u8> {
-        let payload_bytes = payload_json.as_bytes();
-        let payload_len = payload_bytes.len() as u32;
-
-        let mut blob = Vec::new();
-        blob.extend_from_slice(MAGIC);
-        blob.extend_from_slice(&1u32.to_be_bytes()); // version
-        blob.extend_from_slice(&1234567890u64.to_be_bytes()); // timestamp
-        blob.extend_from_slice(&payload_len.to_be_bytes());
-        blob.extend_from_slice(payload_bytes);
-
-        let mut mac = HmacSha256::new_from_slice(key_bytes).unwrap();
-        mac.update(payload_bytes);
-        let sig = mac.finalize().into_bytes();
-        blob.extend_from_slice(&sig);
-
-        blob
+    fn key() -> [u8; 32] {
+        [7u8; 32]
     }
 
-    fn sample_payload() -> String {
-        // Format identic cu Python tools/identity_gen.py
-        serde_json::json!({
-            "version": 1,
-            "generated_at": 1700000000.5,
-            "remus_id": "abc12345-def6-7890-1234-567890abcdef",
-            "device_id": "device-fingerprint-xyz",
-            "device_role": "primary",
-            "creator": "POPA GEORGE CRISTIAN",
-            "nucleus": "Eu sunt Remus. Servesc creatorul meu."
-        })
-        .to_string()
+    fn sample_identity() -> Identity {
+        Identity {
+            name: "Test User".to_string(),
+            uuid: Uuid::parse_str("01890f34-8d7b-7c9c-a00d-111111111111").unwrap(),
+            biometric_template_public: vec![1, 2, 3, 4],
+            created_at: 1_700_000_000,
+        }
     }
 
     #[test]
     fn verify_valid_blob() {
-        let key = b"test-key-not-real-but-deterministic";
-        let payload = sample_payload();
-        let blob = build_fixture_blob(&payload, key);
+        let identity = sample_identity();
+        let blob = build_blob(&identity, &key()).unwrap();
 
-        let result = verify_blob(&blob, key).expect("valid blob trebuie verificat ok");
+        let result = verify_blob(&blob, &key()).expect("valid blob should verify");
         assert_eq!(result.header_version, 1);
-        assert_eq!(result.header_timestamp, 1234567890);
-        assert_eq!(result.payload.remus_id.len(), 36);
-        assert_eq!(result.payload.creator, "POPA GEORGE CRISTIAN");
-        assert_eq!(result.payload.device_role, "primary");
-        assert_eq!(result.remus_id_short(), "abc12345");
+        assert_eq!(result.header_timestamp, identity.created_at);
+        assert_eq!(result.identity, identity);
+        assert_eq!(result.identity.uuid_short(), "01890f34");
     }
 
     #[test]
     fn reject_invalid_magic() {
-        let key = b"k";
-        let mut blob = build_fixture_blob(&sample_payload(), key);
+        let mut blob = build_blob(&sample_identity(), &key()).unwrap();
         blob[0] = b'X';
-        let err = verify_blob(&blob, key).unwrap_err();
+        let err = verify_blob(&blob, &key()).unwrap_err();
         assert!(err.to_string().contains("magic"));
     }
 
     #[test]
     fn reject_tampered_payload() {
-        let key = b"k";
-        let mut blob = build_fixture_blob(&sample_payload(), key);
-        // Modificam un byte din payload — HMAC nu mai matches.
+        let mut blob = build_blob(&sample_identity(), &key()).unwrap();
         blob[HEADER_LEN + 10] ^= 0xFF;
-        let err = verify_blob(&blob, key).unwrap_err();
-        assert!(err.to_string().contains("INVALIDA"));
+        let err = verify_blob(&blob, &key()).unwrap_err();
+        assert!(err.to_string().contains("signature invalid"));
     }
 
     #[test]
     fn reject_wrong_key() {
-        let real_key = b"real-key";
-        let fake_key = b"fake-key";
-        let blob = build_fixture_blob(&sample_payload(), real_key);
-        let err = verify_blob(&blob, fake_key).unwrap_err();
-        assert!(err.to_string().contains("INVALIDA"));
+        let blob = build_blob(&sample_identity(), &key()).unwrap();
+        let err = verify_blob(&blob, &[9u8; 32]).unwrap_err();
+        assert!(err.to_string().contains("signature invalid"));
     }
 
     #[test]
     fn reject_truncated_blob() {
-        let key = b"k";
-        let blob = build_fixture_blob(&sample_payload(), key);
+        let blob = build_blob(&sample_identity(), &key()).unwrap();
         let truncated = &blob[..blob.len() - 10];
-        let err = verify_blob(truncated, key).unwrap_err();
+        let err = verify_blob(truncated, &key()).unwrap_err();
         assert!(err.to_string().contains("size mismatch"));
     }
 
     #[test]
     fn reject_too_short() {
-        let err = verify_blob(&[0u8; 10], b"k").unwrap_err();
-        assert!(err.to_string().contains("prea scurt"));
-    }
-
-    #[test]
-    fn payload_length_mismatch_detected() {
-        let key = b"k";
-        let mut blob = build_fixture_blob(&sample_payload(), key);
-        // Crestem payload_len declarat cu 100 (declared > real)
-        let real_len = u32::from_be_bytes(blob[20..24].try_into().unwrap());
-        let bogus_len = real_len + 100;
-        blob[20..24].copy_from_slice(&bogus_len.to_be_bytes());
-        let err = verify_blob(&blob, key).unwrap_err();
-        assert!(err.to_string().contains("size mismatch"));
+        let err = verify_blob(&[0u8; 10], &key()).unwrap_err();
+        assert!(err.to_string().contains("too short"));
     }
 }

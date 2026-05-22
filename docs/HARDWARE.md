@@ -39,7 +39,7 @@
 
 ## Concrete options (sorted by recommendation, NOT fixed choice)
 
-> Orice device de mai jos e acceptabil. Alegerea finală depinde de ce găsește George la momentul cumpărării: disponibilitate stoc, preț, ofertă second-hand. **Nu refacem arhitectura dacă ajunge un OnePlus în loc de Pixel.**
+> Orice device de mai jos e acceptabil. Alegerea finală depinde de disponibilitate stoc, preț și ofertă second-hand. **Nu refacem arhitectura dacă ajunge un OnePlus în loc de Pixel.**
 
 ### Pixel 7 — recomandare top (exemplu)
 - **Preț**: ~400-500€ second-hand (verificat eBay, Vinted, Backmarket)
@@ -145,7 +145,7 @@ Pentru AOSP build environment:
 - **Sau**: cloud VM (Azure / AWS / Hetzner) cu echivalent
 - **Storage** pentru AOSP source + builds: ~200GB minimum
 
-George decide dacă build face local vs cloud după ce ajungem la Y2.
+Decizia local vs cloud build se ia după ce ajungem la Y2.
 
 ---
 
@@ -156,4 +156,4 @@ Dacă proiectul prinde tracțiune (v1.0+), opțiuni:
 - **Mediu termen**: custom firmware pe device popular (Pixel 7 / 8 cu YBOS preinstalat)
 - **Pe termen lung**: hardware custom proiectat — necesită capital VC
 
-Nu e decizie pentru acum. MVP demo pe orice ARM64 + NPU + AOSP-friendly device pe care George îl achiziționează.
+Nu e decizie pentru acum. MVP demo pe orice ARM64 + NPU + AOSP-friendly device disponibil pentru testare.

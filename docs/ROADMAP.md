@@ -10,7 +10,7 @@
 
 - Repo YBOS creat (public, github.com/PGC22/YBOS)
 - Structură directoare + docs scrise
-- l0/ portat din RemusOS3 (Cargo.toml rebrand `ybos-l0`)
+- l0/ portat din prototipul inițial (Cargo.toml rebrand `ybos-l0`)
 - YBOSClaude.md = source of truth context
 - Arhitectură detailed (inclusiv laptop companion + user-context memory + task offload)
 
@@ -24,10 +24,10 @@
 
 ### Scope
 
-1. **Generalizare `l0/src/identity/` din George-hardcoded la enrollment dinamic**
+1. **Generalizare `l0/src/identity/` din owner hardcoded la enrollment dinamic**
    - `Identity` struct generic (nume, UUID generated, biometric_template_public, created_at)
-   - Eliminare referințe text "George", "Remus" din log messages + identitate
-   - Layout paths nou: `${YBOS_DATA}/identity/...` în loc de paths Remus
+   - Eliminare referințe text la owner/prototip din log messages + identitate
+   - Layout paths nou: `${YBOS_DATA}/identity/...` în loc de paths de prototip
    - `sacred.rs` lista actualizată la layout YBOS
 
 2. **Onboarding flow scaffold (Rust, single-device)**
@@ -45,7 +45,7 @@
    - API pentru `revoke_session(session_id)` + `revoke_all()`
    - **NU implementăm QR/NFC pairing flow aici** — doar API-ul intern. Pairing-ul e o fază viitoare cu laptop companion.
 
-4. **Tripwire boot integrity (păstrat din Remus, adaptat)**
+4. **Tripwire boot integrity (păstrat din prototip, adaptat)**
    - Hash check pe L0 SACRED files
    - Hash check pe lista L0_SACRED însăși (anti-tamper)
    - Boot blocat dacă mismatch
@@ -61,7 +61,7 @@
 - [ ] BIP39 mnemonic generat, afișat, marker `bip39.lock` scris
 - [ ] Session token API testabil unitar (issue + revoke)
 - [ ] Tripwire detectează modificare a oricărui L0 SACRED file
-- [ ] Zero referințe hardcoded "George" sau "Remus" în code/docs
+- [ ] Zero referințe hardcoded la owner/prototip în code/docs
 - [ ] Plan TEE binding documentat în `docs/ARCHITECTURE.md` §2.1 (StrongBox/Hexagon API research, fără implementare)
 
 ### Ce NU intrare în Y1
