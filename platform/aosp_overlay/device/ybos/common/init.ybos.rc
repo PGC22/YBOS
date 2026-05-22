@@ -1,0 +1,19 @@
+# init.ybos.rc — YBOS L0 daemon service definition
+# WHY: Ensures ybos-l0 starts at boot with correct permissions and environment.
+
+on post-fs-data
+    # Create directory for YBOS persistent data (Identity, etc.)
+    mkdir /data/ybos 0770 ybos ybos
+    # Set SELinux label for the data directory
+    restorecon_recursive /data/ybos
+
+service ybos-l0 /system/bin/ybos-l0
+    class main
+    user ybos
+    group ybos system
+    capabilities CHOWN DAC_OVERRIDE
+    socket ybos_l0 stream 660 ybos ybos
+    restart_period 5
+    oneshot false
+    # Restart on crash
+    onrestart restart ybos-l0

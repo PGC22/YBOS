@@ -59,6 +59,20 @@ Porturi locale:
 - MQTT: `127.0.0.1:11883`
 - gRPC: `127.0.0.1:50051`
 
+## Cross-compile aarch64
+
+To build `ybos-l0` for Android (aarch64), use the provided wrapper script.
+You must have the Android NDK installed and `ANDROID_NDK_HOME` set.
+
+```bash
+cd l0
+export ANDROID_NDK_HOME=/path/to/your/ndk
+./build_android.sh
+```
+
+The script will add the necessary Rust target, configure the linker paths,
+and produce a release binary in `target/aarch64-linux-android/release/ybos-l0`.
+
 ## Security Notes
 
 - K-master nu este scris niciodată în clar pe disk.

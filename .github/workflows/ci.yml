@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, feat/* ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test_l0:
+    name: Build & Test l0
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Install protoc
+        run: sudo apt-get install -y protobuf-compiler
+      - name: Run tests
+        working-directory: l0
+        run: cargo test
+
+  cross_compile_android:
+    name: Cross-compile l0 for Android
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+      - name: Install cross
+        run: cargo install cross
+      - name: Build with cross
+        working-directory: l0
+        run: cross build --release --target aarch64-linux-android
+      - name: Verify binary
+        run: |
+          file l0/target/aarch64-linux-android/release/ybos-l0 | grep "ELF 64-bit LSB" | grep "ARM aarch64"
+
+  shellcheck:
+    name: ShellCheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run ShellCheck
+        run: |
+          find . -name "*.sh" -print0 | xargs -0 shellcheck

@@ -1,0 +1,10 @@
+# .cargo/config.toml — Linker setup for Android cross-compile
+# WHY: Maps the target to the correct NDK toolchain linker.
+# Requires ANDROID_NDK_HOME environment variable to be set.
+
+[target.aarch64-linux-android]
+linker = "aarch64-linux-android34-clang"
+
+[env]
+# We assume ANDROID_NDK_HOME is set and the toolchain is in the PATH
+# or we use full paths in build_android.sh by setting RUSTFLAGS/CARGO_TARGET_...

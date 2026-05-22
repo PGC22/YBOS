@@ -1,0 +1,10 @@
+# system.prop — YBOS system properties
+# WHY: Identification of YBOS builds in 'About Phone' and system APIs.
+
+ro.product.brand=YBOS
+ro.product.manufacturer=YBOS
+ro.product.model=YBOS-DEV
+
+# Enable ADB at first boot for dev devices
+persist.sys.usb.config=mtp,adb
+ro.adb.secure=0
