@@ -2,7 +2,7 @@ use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
-use crate::agent::{Agent, AgentCall, AgentResponse};
+use crate::agent::{Agent, AgentCall, AgentContext, AgentResponse};
 use crate::manifest::Manifest;
 use crate::registry::AgentRegistry;
 
@@ -19,13 +19,15 @@ pub trait AgentRuntime: Send + Sync {
 
 pub struct InProcessRuntime {
     registry: Arc<AgentRegistry>,
+    context: AgentContext,
     active_agents: RwLock<HashMap<String, Arc<dyn Agent>>>,
 }
 
 impl InProcessRuntime {
-    pub fn new(registry: Arc<AgentRegistry>) -> Self {
+    pub fn new(registry: Arc<AgentRegistry>, context: AgentContext) -> Self {
         Self {
             registry,
+            context,
             active_agents: RwLock::new(HashMap::new()),
         }
     }
@@ -67,7 +69,7 @@ impl AgentRuntime for InProcessRuntime {
             .cloned()
             .ok_or_else(|| anyhow!("agent not active in runtime: {}", handle.agent_name))?;
 
-        agent.invoke(call).await
+        agent.invoke(call, &self.context).await
     }
 }
 

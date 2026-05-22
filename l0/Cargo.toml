@@ -56,14 +56,11 @@ rumqttc = "0.25"
 # gRPC (S6.4) — server tonic + codegen prost
 tonic = { workspace = true }
 prost = { workspace = true }
+ybos-proto = { workspace = true }
 tokio-stream = { version = "0.1", features = ["sync"] }
 futures-core = "0.3"
 
 [build-dependencies]
-# Codegen pentru proto/l0.proto la build time.
-tonic-build = "0.12"
-# Protoc binary vendat — nu cere user-ului sa-l instaleze separat pe Win.
-protoc-bin-vendored = "3"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt", "test-util"] }

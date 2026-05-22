@@ -1,9 +1,9 @@
 use anyhow::Result;
 use std::time::Duration;
 use tonic::transport::Channel;
-use crate::pb::l0::session_service_client::SessionServiceClient;
-use crate::pb::l0::{IssueTokenRequest, GetIdentityRequest};
-use crate::pb::l0::identity_service_client::IdentityServiceClient;
+use ybos_proto::l0::session_service_client::SessionServiceClient;
+use ybos_proto::l0::{IssueTokenRequest, GetIdentityRequest};
+use ybos_proto::l0::identity_service_client::IdentityServiceClient;
 
 pub struct L0Client {
     session_svc: SessionServiceClient<Channel>,
@@ -49,7 +49,7 @@ impl L0Client {
         })
     }
 
-    pub async fn get_identity(&self) -> Result<crate::pb::l0::Identity> {
+    pub async fn get_identity(&self) -> Result<ybos_proto::l0::Identity> {
         let mut client = self.identity_svc.clone();
         let resp = client.get_identity(GetIdentityRequest {}).await?;
         Ok(resp.into_inner())

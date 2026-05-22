@@ -25,12 +25,12 @@ pub struct Token {
     pub logprob: Option<f32>,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum FinishReason {
     Stop,
     MaxTokens,
-    StopSequence,
-    Error,
+    StopSequence(String), // which stop sequence matched
+    Error(String),        // error message
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

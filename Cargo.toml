@@ -1,8 +1,9 @@
 [workspace]
-members = ["l0", "orchestrator", "inference"]
+members = ["l0", "orchestrator", "inference", "proto"]
 resolver = "2"
 
 [workspace.dependencies]
+ybos-proto = { path = "proto" }
 # shared deps with single versions
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "time", "fs", "io-util", "sync"] }
 tracing = "0.1"

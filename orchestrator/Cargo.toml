@@ -13,15 +13,15 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 tonic = { workspace = true }
 prost = { workspace = true }
+ybos-proto = { workspace = true }
 hex = { workspace = true }
 sha2 = { workspace = true }
 uuid = { version = "1", features = ["v4", "serde"] }
 toml = "0.8"
 async-trait = "0.1"
+ybos-inference = { path = "../inference" }
 
 [build-dependencies]
-tonic-build = "0.12"
-protoc-bin-vendored = "3"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt", "test-util"] }

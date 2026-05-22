@@ -23,10 +23,8 @@ mod reflex_service;
 pub mod session_service;
 mod telemetry_service;
 
-/// Codegen prost — includem modulul generat de `tonic-build` (vezi `build.rs`).
-pub mod pb {
-    tonic::include_proto!("ybos.l0.v1");
-}
+/// Codegen prost — re-exportam din `ybos-proto`.
+pub use ybos_proto::l0 as pb;
 
 pub const GRPC_LISTEN: &str = "127.0.0.1:50051";
 

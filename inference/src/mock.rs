@@ -33,7 +33,11 @@ impl Inference for MockInference {
         let words: Vec<&str> = full_text.split_whitespace().collect();
 
         let (text, finish_reason, tokens_out) = if words.len() > req.max_tokens {
-            (words[..req.max_tokens].join(" "), FinishReason::MaxTokens, req.max_tokens)
+            (
+                words[..req.max_tokens].join(" "),
+                FinishReason::MaxTokens,
+                req.max_tokens,
+            )
         } else {
             (full_text.clone(), FinishReason::Stop, words.len())
         };

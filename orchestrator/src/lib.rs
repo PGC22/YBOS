@@ -7,10 +7,6 @@ pub mod l0_client;
 pub mod agents;
 
 pub mod pb {
-    pub mod l0 {
-        tonic::include_proto!("ybos.l0.v1");
-    }
-    pub mod orchestrator {
-        tonic::include_proto!("ybos.orchestrator.v1");
-    }
+    pub use ybos_proto::l0;
+    pub use ybos_proto::orchestrator;
 }

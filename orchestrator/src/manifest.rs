@@ -18,6 +18,8 @@ pub struct Capabilities {
     pub data_types: Vec<String>,
     #[serde(default)]
     pub data_user_prefs: AccessLevel,
+    #[serde(default)]
+    pub llm: bool,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
