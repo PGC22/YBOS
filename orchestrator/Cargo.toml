@@ -25,7 +25,6 @@ ybos-memory = { workspace = true }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt", "test-util"] }
-tracing-test = "0.2"
 ybos-l0 = { path = "../l0", features = ["dev_test_init"] }
 # tokio-stream is only used by the end_to_end integration test (TcpListenerStream).
 tokio-stream = { version = "0.1", features = ["net"] }
