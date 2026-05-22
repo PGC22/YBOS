@@ -36,6 +36,36 @@ jobs:
         run: |
           file target/aarch64-linux-android/release/ybos-l0 | grep "ELF 64-bit LSB" | grep "ARM aarch64"
 
+  inference_mock:
+    name: Build & Test inference (mock)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Run inference tests (mock)
+        run: cargo test -p ybos-inference
+
+  inference_llama:
+    name: LocalLlama smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake clang
+      - name: Cache test models
+        uses: actions/cache@v4
+        with:
+          path: target/test-models/
+          key: ${{ runner.os }}-test-models-tinyllama-v1.0
+      - name: Run LocalLlama smoke test
+        run: cargo test -p ybos-inference --features local_llama
+        timeout-minutes: 20
+
   shellcheck:
     name: ShellCheck
     runs-on: ubuntu-latest

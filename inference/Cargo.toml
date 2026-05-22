@@ -1,0 +1,27 @@
+[package]
+name = "ybos-inference"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = ["mock"]
+mock = []
+local_llama = ["dep:llama-cpp-2", "dep:num_cpus"]
+remote_api = []
+
+[dependencies]
+async-trait = "0.1"
+tokio = { workspace = true }
+tokio-stream = { version = "0.1", features = ["sync"] }
+futures = "0.3"
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+secrecy = "0.8"
+llama-cpp-2 = { version = "0.1.146", optional = true }
+num_cpus = { version = "1", optional = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "test-util", "time"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "blocking"] }
