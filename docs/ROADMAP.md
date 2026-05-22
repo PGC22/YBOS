@@ -60,138 +60,244 @@
 
 ---
 
-## Y3 — L1 orchestrator skeleton + L0 SessionService gRPC ⭐ NEXT
+## Y3 — L1 orchestrator skeleton + L0 SessionService gRPC ✅ Done (PR #3 merged)
 
-> Decizii agreate (2026-05-22 sesiune Y3):
-> - **Process model agenți**: hybrid — trait `Agent` + trait `AgentRuntime` cu impl `InProcess` în Y3, design-uit pentru `Subprocess` impl viitor (Android Binder / gRPC) fără refactor major.
-> - **Cargo workspace**: da, convertesc root în workspace cu members `[l0, orchestrator]`.
-> - **L1 → L0 session wire-up**: real (NU doar placeholder). L0 expune SessionService gRPC nouă, L1 are client real care apelează `IssueToken/RevokeSession/ListActive`.
+- Cargo workspace conversion (members `[l0, orchestrator]`, shared deps)
+- L0 SessionService gRPC nouă: 5 RPCs (IssueToken / RevokeSession / RevokeAll / ListActive / InitializeForTest cu feature gate `dev_test_init`)
+- `l0/src/lib.rs` adăugat pentru testing in-process (main.rs intact, L0 SACRED preserved)
+- `YBOS_L0_GRPC_LISTEN` env var pentru port override
+- orchestrator crate cu: Agent trait + AgentRuntime hybrid (InProcessRuntime impl + SubprocessRuntime placeholder), Manifest cu Capabilities + AccessLevel, capability enforce, AgentRegistry static+runtime, L0Client cu issue_session_token + get_identity, HelloAgent demo
+- End-to-end test: orchestrator obține token real via gRPC + register/invoke agents + capability enforcement
+- `Cross.toml` mutat la root (workspace-friendly), CI `cross build -p ybos-l0`
 
-### Scope Y3
-
-#### A. L0 — expune session token API via gRPC (wrapper peste identity::session existing)
-
-1. **Proto definition**
-   - `l0/proto/l0.proto`: adaugă service `SessionService` cu RPC:
-     - `IssueToken(IssueTokenRequest) → IssueTokenResponse` (scope + expiry_secs + peer_fingerprint → session_id, key_bytes, expires_at)
-     - `RevokeSession(RevokeSessionRequest) → RevokeSessionResponse`
-     - `RevokeAll(RevokeAllRequest) → RevokeAllResponse`
-     - `ListActive(ListActiveRequest) → ListActiveResponse` (returnează `repeated SessionInfo`)
-     - `InitializeForTest(InitializeForTestRequest) → InitializeForTestResponse` — DEV-ONLY RPC pentru testare end-to-end fără onboarding flow real; gated în production cu feature flag `dev_test_init` sau env check.
-
-2. **Implementation**
-   - `l0/src/grpc/session_service.rs` (NEW) — implementează tonic service trait, deleagă la `identity::session::{issue_session_token, revoke_session, revoke_all, list_active}` existing.
-   - `l0/src/grpc/mod.rs` — register `SessionService` alongside existing `IdentityService`/`TelemetryService`/`ReflexService` în `serve()`.
-   - **NU modifică `l0/src/main.rs`** (L0 SACRED) — toată wiring se face în `grpc::serve()`.
-   - **NU modifică `l0/src/identity/*`** (Y1 modules, L0 SACRED enforcement) — session_service.rs e doar wrapper peste module-level API public din Y1.
-
-3. **Tests**
-   - Unit tests pentru convert layer (proto ↔ Rust types)
-   - Integration test: spawn SessionService în background tokio task → client tonic apelează IssueToken → primește token valid → ListActive returnează 1 sesiune → RevokeSession → ListActive returnează 0
-   - Pentru InitializeForTest: cu master_key fix `[0u8; 32]` în test (NU în production)
-
-#### B. Cargo workspace conversion
-
-1. **Root**
-   - `Cargo.toml` (NEW, root): `[workspace] members = ["l0", "orchestrator"] resolver = "2"` + `[workspace.dependencies]` cu deps shared (tokio, tracing, anyhow, thiserror, serde, prost, tonic, hex, sha2 — versiuni unice).
-2. **l0**
-   - `l0/Cargo.toml` — adapt minor pentru workspace inheritance (e.g. `tokio.workspace = true` unde aplicabil); restul intact. Verifică `cargo test -p ybos-l0` still green.
-3. **orchestrator** — vezi C.
-4. **CI**
-   - `.github/workflows/ci.yml` — schimbă `cargo test` în `cargo test --workspace`, similar pentru cross-compile job dacă orchestrator targets aarch64.
-
-#### C. orchestrator/ crate (L1 skeleton)
-
-Layout:
-```
-orchestrator/
-├── Cargo.toml             # package = ybos-orchestrator
-├── build.rs               # tonic-build pentru proto
-├── proto/
-│   └── orchestrator.proto # L1's own API (RegisterAgent, ListAgents, InvokeAgent, ...)
-└── src/
-    ├── lib.rs             # public re-exports
-    ├── main.rs            # binary daemon mode (optional, minimal)
-    ├── agent.rs           # trait Agent + Manifest struct
-    ├── runtime.rs         # trait AgentRuntime + impl InProcessRuntime + placeholder SubprocessRuntime trait (no impl)
-    ├── manifest.rs        # parser TOML pentru manifest.toml
-    ├── capability.rs      # Layer 1 enforcement (declarative check)
-    ├── registry.rs        # AgentRegistry: static + runtime registration
-    ├── l0_client.rs       # gRPC client pentru L0 SessionService + IdentityService
-    └── agents/
-        └── hello.rs       # demo agent in-process pentru smoke test
-```
-
-Funcționalitate minimă Y3:
-- `Agent` trait cu metode: `manifest() → &Manifest`, `invoke(call: AgentCall) → Result<AgentResponse>`
-- `Manifest` struct cu: `name: String, version: String, capabilities: Capabilities` unde `Capabilities` declară `net.domains`, `fs.paths`, `data.types`, `data.user_prefs` (read|read_write|none)
-- `AgentRuntime` trait cu `spawn(manifest) → RuntimeHandle`, `invoke(handle, call) → Response`. Impl `InProcessRuntime` care păstrează agenții ca `Arc<dyn Agent>` într-un HashMap.
-- `AgentRegistry` cu: `register_static(agent: Arc<dyn Agent>)`, `register_runtime(manifest_toml: &str, factory: Box<dyn Fn() -> Arc<dyn Agent>>)`, `list() → Vec<&Manifest>`, `get(name) → Option<Arc<dyn Agent>>`
-- `capability::enforce(manifest, intended_op: Operation) → Result<()>` — verifică dacă op-ul cerut e declarat în manifest. Operațiuni: `NetConnect(domain)`, `FsRead(path)`, `FsWrite(path)`, `UserContextRead`, `UserContextWrite`.
-- `l0_client::L0Client` cu metodă `issue_session_token(scope, expiry, peer_fingerprint) → SessionToken` care apelează gRPC SessionService.
-- `hello::HelloAgent` — agent demo cu manifest minimal (no capabilities), răspunde la invoke cu "hello from <name>".
-
-#### D. End-to-end demo (smoke test acceptance)
-
-Test integration care:
-1. Pornește l0 daemon în task tokio
-2. Apelează `SessionService.InitializeForTest` cu master_key fix
-3. Pornește orchestrator → instanțiază `L0Client`
-4. Apelează `l0_client.issue_session_token(scope, expiry, peer_fp)` → primește token valid
-5. Registrează `HelloAgent` static + un al doilea agent printr-un manifest.toml string runtime-registered
-6. `registry.list()` returnează 2 agenți
-7. `runtime.invoke("hello", AgentCall{...})` returnează response așteptat
-8. Test capability enforcement: invoke cu op nedeclarat → `Err(CapabilityDenied)`
-
-### Acceptance criteria Y3
-
-- [ ] `Cargo.toml` root cu workspace funcțional (`cargo build --workspace` verde)
-- [ ] `cargo test --workspace` verde (Y1 48 tests + orchestrator new tests + session_service new tests)
-- [ ] Zero modificări în `l0/src/identity/*` și `l0/src/main.rs` (L0 SACRED preserved)
-- [ ] Zero modificări în `docs/`, `YBOSClaude.md`, `README.md` root, `reference/`
-- [ ] `l0/proto/l0.proto` extins cu SessionService (4 RPC + 1 dev-only)
-- [ ] `l0/src/grpc/session_service.rs` implementat + înregistrat în `grpc::serve()`
-- [ ] `orchestrator/` crate creat conform layout-ului
-- [ ] Demo end-to-end test pass: orchestrator obține session token real de la L0, registrează agenți (static + runtime), capability enforcement blochează op nedeclarat
-- [ ] CI: `Build & Test l0`, `Cross-compile l0 for Android` (workspace-aware), `ShellCheck` toate verzi. Adaugă nou job `Build & Test orchestrator`.
-
-### Ce NU intra în Y3
-
-- Privacy firewall Layer 2 (eBPF redactor) — fază separată
-- Privacy firewall Layer 3 (LLM judge) — fază separată
-- LLM inference integration — Y4
-- Persistent memory per-agent (vector DB) — fază separată
-- User-Context Memory subsystem — fază separată
-- Agent Builder LLM-assisted configurator full — Y12.5 (Y3 lasă doar hook în registry pentru runtime registration)
-- Real laptop pairing flow (QR/NFC scan + mTLS conn) — fază separată
-- Process isolation pentru agenți (SubprocessRuntime impl real) — design-uit ca trait în Y3, impl ulterior
-- Replace Argon2id-XOR envelope A cu AEAD vetted — known carry-over Y1, fază separată
-- Cross-compile orchestrator pentru aarch64-android — verificare doar pe l0 în CI Y3; orchestrator cross-compile când avem nevoie
+**Known carry-over flags** (post-merge):
+- Proto duplicate compilation (l0 + orchestrator generează tipuri Rust distincte din același `l0.proto`) — follow-up: shared `ybos-proto` crate
+- `revoke_all` count via list-then-revoke (TOCTOU minor) — fix necesită update în Y1 session.rs
+- AgentRegistry runtime factory creează agent nou la fiecare `get()` (vs Static shared Arc) — inconsistent lifecycle
+- `tokio-stream` cu feature "net" inocuu (feature nu există, silently ignorat)
+- `.unwrap()` pe RwLock în orchestrator (panică la poison)
+- Capability path normalization absent (`FsRead(../../../etc/passwd)` bypass risk) — adresat în Y7 firewall hardening
 
 ---
 
-## Y4+ — Faze enumerate (detaliu TBD când ajungem)
+## Y4 — LLM inference layer (skeleton + LocalLlama CPU) ⭐ NEXT
 
-Doar headline-uri. Semne de întrebare doar unde **chiar afectează faza activă (Y3)**.
+> Decizii agreate (2026-05-22 sesiune Y4):
+> - **Scope Y4**: skeleton COMPLET + LocalLlama real via `llama-cpp-2` Rust crate (CPU-only, no NPU). Cross-compile aarch64 deferat (NPU acceleration mlc-llm e Y4.b post-device).
+> - **Workspace**: crate nou `inference/` (package `ybos-inference`).
+> - **Streaming**: trait Inference are AMBELE — `complete()` sync + `complete_stream()` streaming.
 
-- **LLM inference layer** — llama.cpp + mlc-llm pe NPU. ❓ Inference trait design: Y3 orchestrator nu o consumă direct, dar registry/runtime ar trebui să poată invoca agenți care apoi cer LLM (deferat la Y4).
-- **Agent seed: Calendar** — primul agent end-to-end demo cu LLM tools.
+### Scope Y4
+
+#### A. Crate nou `inference/` (workspace member)
+
+Layout:
+```
+inference/
+├── Cargo.toml                # package = ybos-inference; features pentru LocalLlama heavy build
+├── src/
+│   ├── lib.rs                # public re-exports
+│   ├── trait_def.rs          # Inference trait (sync + streaming)
+│   ├── types.rs              # CompleteRequest, CompleteResponse, Token, InferenceError
+│   ├── mock.rs               # MockInference (canned responses, no LLM)
+│   ├── local_llama.rs        # LocalLlama via llama-cpp-2 (cfg-gated cu feature `local_llama`)
+│   └── remote_api.rs         # RemoteAPI stub (returnează NotImplemented; cloud burst design Y... ulterior)
+└── tests/
+    ├── mock_smoke.rs         # rulează default, fără model
+    └── llama_smoke.rs        # cfg-gated cu feature `local_llama`, descarcă model mic, rulează inference real
+```
+
+#### B. Inference trait design
+
+```rust
+#[async_trait]
+pub trait Inference: Send + Sync {
+    async fn complete(&self, req: CompleteRequest) -> Result<CompleteResponse, InferenceError>;
+    async fn complete_stream(
+        &self,
+        req: CompleteRequest,
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<Token, InferenceError>> + Send>>, InferenceError>;
+    fn model_info(&self) -> ModelInfo;
+}
+
+pub struct CompleteRequest {
+    pub prompt: String,
+    pub max_tokens: usize,
+    pub temperature: f32,
+    pub top_p: f32,
+    pub stop: Vec<String>,
+    pub seed: Option<u64>,
+}
+
+pub struct CompleteResponse {
+    pub text: String,
+    pub finish_reason: FinishReason,
+    pub tokens_in: usize,
+    pub tokens_out: usize,
+}
+
+pub struct Token {
+    pub text: String,
+    pub logprob: Option<f32>,
+}
+
+pub enum FinishReason { Stop, MaxTokens, StopSequence(String), Error(String) }
+
+pub struct ModelInfo {
+    pub backend: String,        // "mock" | "local-llama" | "remote-api"
+    pub model_name: String,
+    pub context_window: usize,
+}
+
+pub enum InferenceError {
+    ModelLoad(String),
+    Generation(String),
+    InvalidRequest(String),
+    NotImplemented,
+}
+```
+
+#### C. Implementations
+
+1. **MockInference** (`src/mock.rs`):
+   - Constructor: `MockInference::new(canned_responses: Vec<String>)`
+   - `complete`: returnează următorul canned response, cycling
+   - `complete_stream`: împarte canned response în "tokens" (whitespace split) + simulate delay (50ms/token)
+   - Zero dependențe heavy
+
+2. **LocalLlama** (`src/local_llama.rs`, gated `#[cfg(feature = "local_llama")]`):
+   - Folosește `llama-cpp-2` crate ([docs.rs/llama-cpp-2](https://docs.rs/llama-cpp-2/))
+   - Constructor: `LocalLlama::load(model_path: &Path, params: LlamaParams)` — încarcă model GGUF
+   - `LlamaParams`: context_size (default 8192), n_threads (default num_cpus), n_gpu_layers (0 = CPU)
+   - `complete`: tokenize prompt → batch eval → sample → decode → return text
+   - `complete_stream`: token-by-token via callback, yielded prin `tokio::sync::mpsc` channel
+   - Stop sequences enforced via post-token check
+   - `model_info()` returnează info despre modelul încărcat (din metadata GGUF)
+   - Error mapping: llama-cpp-2 errors → InferenceError
+
+3. **RemoteAPI stub** (`src/remote_api.rs`):
+   - Struct cu `endpoint: String, api_key: SecretString` (NU implementat call efectiv în Y4)
+   - `complete`/`complete_stream` returnează `Err(InferenceError::NotImplemented)`
+   - Existență la nivel de trait pentru viitor cloud burst — design ready, no API leak risk
+
+#### D. Cargo features pentru a izola greutatea llama.cpp
+
+`inference/Cargo.toml`:
+```toml
+[features]
+default = ["mock"]
+mock = []                       # always available, no deps
+local_llama = ["llama-cpp-2"]   # heavy: cmake + clang + native build
+remote_api = []                 # always available, stub for now
+
+[dependencies]
+llama-cpp-2 = { version = "...", optional = true }
+# trait infra:
+async-trait = { workspace = true }
+tokio-stream = { workspace = true }
+futures = "0.3"
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+secrecy = "0.8"                # pentru SecretString în RemoteAPI
+```
+
+Workspace `Cargo.toml` adăugă membru:
+```toml
+[workspace]
+members = ["l0", "orchestrator", "inference"]
+```
+
+#### E. Smoke tests
+
+1. **`inference/tests/mock_smoke.rs`** (default, fără feature):
+   - Construct MockInference cu 2 canned responses
+   - `complete()` → assert text egal cu canned[0]
+   - `complete_stream()` → consum stream → join tokens → assert egal cu canned[1]
+   - Test FinishReason::MaxTokens când canned > max_tokens
+
+2. **`inference/tests/llama_smoke.rs`** (cfg `feature = "local_llama"`):
+   - Download `TinyLlama-1.1B-Chat-v1.0.Q4_K_M.gguf` (~600MB) într-un cache dir (`OUT_DIR/models/` sau `target/test-models/`) DOAR DACĂ nu există deja
+   - LocalLlama::load(path) → asserts ok
+   - `complete(prompt = "Hello, what is 2+2?", max_tokens = 32)` → asserts response non-gol + nu panică
+   - `complete_stream(...)` → consumă stream → asserts > 0 tokens emise
+
+3. **Mock tests pot rula în orice job CI.** Llama smoke test = nou CI job opt-in.
+
+#### F. CI
+
+- **Job nou**: `Build & Test inference (mock)` — `cargo test -p ybos-inference` (default features, no llama-cpp-2)
+- **Job nou** (opt-in, mai lent): `LocalLlama smoke test` — `cargo test -p ybos-inference --features local_llama`
+  - Caching: model file salvat în GitHub Actions cache (key bazat pe model name + version)
+  - cmake + clang necesare (preinstalate pe ubuntu-latest)
+  - Timeout generos (10 min) pentru cmake build llama.cpp + download model
+- **Job existent**: `Build & Test Workspace` — invocă `cargo test --workspace` cu defaults (mock only, no llama dep) ca să rămână rapid
+- **Job existent**: `Cross-compile l0 for Android` — neschimbat, NU adăugăm inference la cross-compile (NPU/Android-specific = Y4.b)
+- **Job existent**: `ShellCheck` — neschimbat
+
+#### G. Documentation
+
+- `inference/README.md` — explain crate features, cum se download model, cum se rulează LocalLlama smoke local
+- NU update YBOSClaude.md / ARCHITECTURE.md / etc. (out of scope; Lead Dev face în review post-merge dacă necesar)
+
+### Acceptance criteria Y4
+
+- [ ] `inference/` crate creat ca workspace member, `cargo build -p ybos-inference` verde
+- [ ] `cargo test --workspace` verde (mock tests pass, llama tests filtered out fără feature)
+- [ ] `cargo test -p ybos-inference --features local_llama` verde (CI cu cache model, rulează inference real cu TinyLlama)
+- [ ] Inference trait cu `complete()` + `complete_stream()` definit corect
+- [ ] MockInference, LocalLlama (cfg `local_llama`), RemoteAPI stub toate implementate
+- [ ] Zero modificări în `l0/**`, `orchestrator/**`, `docs/**`, `YBOSClaude.md`, `README.md` root, `reference/**`, `platform/**`
+- [ ] Workspace `Cargo.toml` actualizat doar cu noul membru
+- [ ] CI: toate jobs existing verzi + 2 jobs noi (inference mock + LocalLlama)
+- [ ] `inference/README.md` documentat cu features + how-to local run
+
+### Ce NU intra în Y4
+
+- NPU acceleration via mlc-llm — Y4.b post-device
+- Cross-compile inference pentru aarch64-linux-android — Y4.b
+- Orchestrator integration (Agent → Inference injection) — fază separată (Y4.c sau Y5)
+- Vector store (sqlite-vec / qdrant) — fază separată (Y4.d)
+- RemoteAPI real impl (Anthropic / OpenAI calls) — Y15 (cloud burst activation)
+- LLM judge sub-agent (Privacy Firewall Layer 3) — Y9
+- Streaming over gRPC (orchestrator-side wrapper) — fază separată
+- Tool calling / function calling API — fază separată
+
+---
+
+## Y4.b — NPU acceleration + cross-compile aarch64 (BLOCKED pe achiziție device + Y2.b)
+
+- mlc-llm integration pentru NPU acceleration (Tensor G2/G3, Hexagon, Mediatek APU)
+- Cross-compile `ybos-inference` pentru aarch64-linux-android
+- Benchmark CPU vs NPU pe device real
+- RAM usage profiling (<3GB target per ROADMAP acceptance)
+- Cu device disponibil: validare prompt → response în <5s cu model 3B
+
+---
+
+## Y5+ — Faze enumerate (detaliu TBD când ajungem)
+
+Doar headline-uri. Semne de întrebare doar unde **chiar afectează faza activă (Y4)**.
+
+- **Orchestrator integration cu Inference** — Agent → Inference handle prin AgentRuntime; ❓ design API: injection prin context-passing sau global handle?
+- **Vector store** (sqlite-vec sau qdrant embedded) — pentru memorie semantică per-agent. Independent de Y4.
+- **Agent seed: Calendar** — primul agent end-to-end demo cu LLM tools (consumă Inference + Vector store).
 - **Agent seed: News Digest**.
-- **Privacy firewall Layer 1 (capabilities)** — Y3 livrează schelet (`capability::enforce`); Y7 hardenizează enforcement pe toate operațiile + audit log + UI.
+- **Privacy firewall Layer 1 (capabilities)** — Y3 livrat skeleton; Y7 hardenizează enforcement pe toate operațiile + audit log + UI.
 - **Privacy firewall Layer 2 (eBPF redactor)**.
-- **Privacy firewall Layer 3 (LLM judge)**.
+- **Privacy firewall Layer 3 (LLM judge)** — folosește Inference (un sub-model mic).
 - **Agent seed: Trip Planner**.
 - **Agent seed: Market Intel**.
 - **Agent seed: Learning Curator**.
-- **Agent Builder Framework** — template `agents/_template/` + LLM-assisted configurator + UI flow. Y3 lasă hook în registry; Y12.5 livrează workflow complet.
-- **User-Context Memory subsystem** — storage + sync + capability `data.user_prefs`. Y3 declară doar capability în Manifest, NU implementează storage.
-- **Laptop Companion (Tauri)** — pairing QR/NFC + session crypto + task offload + cache sync. Y3 livrează server-side (L0 SessionService) + client-side (orchestrator L0Client); Tauri app + protocol mTLS rămân fază separată.
-- **UI native YBOS mobile** — launcher, onboarding wizard UI, agent dashboards.
+- **Agent Builder Framework** — template `agents/_template/` + LLM-assisted configurator (folosește Inference).
+- **User-Context Memory subsystem** — storage + sync + capability `data.user_prefs`.
+- **Laptop Companion (Tauri)** — pairing QR/NFC + session crypto + task offload + cache sync.
+- **UI native YBOS mobile**.
 - **Cross-device extins** (multi-phone, tabletă) — post-MVP.
-- **Cloud burst activation** — v0.2+.
+- **Cloud burst activation** — v0.2+; activează RemoteAPI cu API key real, per-category opt-in user.
 - **VM Mode (Tier 1) laptop** — Linux VM minim, GPU passthrough, SEV-SNP/TDX integration. Research, post-MVP.
 - **Split inference layer-by-layer** ❓ research item (vezi ARCHITECTURE.md §4.5). Independent.
-- **SubprocessRuntime impl real** — pentru process isolation agenți. Y3 design-uit ca trait, impl când avem nevoie reală (probabil aproape de Privacy Firewall hardening).
+- **SubprocessRuntime impl real** — pentru process isolation agenți.
 
 ---
 
