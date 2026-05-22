@@ -6,7 +6,7 @@ target/
 *.bk
 *~
 
-# Runtime artifacts cand daemonul ruleaza din l0/ (cwd) — REMUS_ROOT cade pe
-# l0/ in loc de root repo. Pana cand path detection e fixat, gitignored.
-# Canonicalul traieste la <repo_root>/config/.
+# Runtime artifacts cand daemonul ruleaza din l0/ (cwd).
+# Canonicalul traieste in ${YBOS_DATA}/identity.
 config/
+.ybos-data/

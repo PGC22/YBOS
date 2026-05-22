@@ -1,14 +1,14 @@
 //! MQTT bus — broker embedded `rumqttd` + publisher local.
 //!
 //! Topics:
-//!   - `remus/status` (retain) — "online" / "offline"
-//!   - `remus/telemetry/cpu` — CpuStats JSON
-//!   - `remus/telemetry/mem` — MemoryStats JSON
-//!   - `remus/telemetry/battery` — array BatteryStats JSON
-//!   - `remus/telemetry/thermal` — array ThermalZone JSON
-//!   - `remus/telemetry/backlight` — BacklightStats JSON
-//!   - `remus/telemetry/full` — TelemetrySnapshot complet JSON
-//!   - `remus/hw/event` — udev events (Faza 7, neimplementat)
+//!   - `ybos/status` (retain) — "online" / "offline"
+//!   - `ybos/telemetry/cpu` — CpuStats JSON
+//!   - `ybos/telemetry/mem` — MemoryStats JSON
+//!   - `ybos/telemetry/battery` — array BatteryStats JSON
+//!   - `ybos/telemetry/thermal` — array ThermalZone JSON
+//!   - `ybos/telemetry/backlight` — BacklightStats JSON
+//!   - `ybos/telemetry/full` — TelemetrySnapshot complet JSON
+//!   - `ybos/hw/event` — udev events (future)
 //!
 //! Bind doar pe `127.0.0.1:1883`. Auth + TLS — S6.x ulterior (cand permitem
 //! peer multi-body pe alt device).
@@ -26,7 +26,7 @@ pub use publisher::Publisher;
 
 static PUBLISHER: OnceLock<Publisher> = OnceLock::new();
 
-/// Porneste broker + publisher local. Publica retain "online" pe remus/status.
+/// Porneste broker + publisher local. Publica retain "online" pe status.
 pub async fn start_mqtt_broker() -> Result<()> {
     broker::spawn()?;
 

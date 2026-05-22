@@ -29,10 +29,16 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "0.8"
 
-# Crypto (Faza 6 / S6.1 — HMAC verify pe identity_core.bin)
+# Crypto (Y1 — identity enrollment, envelope A, BIP39, session tokens)
+argon2 = "0.5"
+bip39 = "2"
 hmac = "0.12"
+hkdf = "0.12"
+rand = "0.8"
 sha2 = "0.10"
 hex = "0.4"
+uuid = { version = "1", features = ["v4", "serde"] }
+zeroize = { version = "1", features = ["derive"] }
 
 # MQTT (S6.3) — broker embedded + client local pentru publish
 rumqttd = "0.20"
@@ -52,6 +58,7 @@ protoc-bin-vendored = "3"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt", "test-util"] }
+tempfile = "3"
 
 [profile.release]
 opt-level = 3

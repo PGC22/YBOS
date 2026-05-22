@@ -1,25 +1,25 @@
 //! MQTT topic constants. Sincronizate cu doc-string-ul din `mod.rs`.
 
-/// Status binar — published cu retain.
-pub const STATUS: &str = "remus/status";
+/// Binary status published with retain.
+pub const STATUS: &str = "ybos/status";
 
-/// Telemetrie CPU — JSON `{ usage_percent, freq_mhz_avg, core_count }`.
-pub const TELEM_CPU: &str = "remus/telemetry/cpu";
+/// CPU telemetry JSON `{ usage_percent, freq_mhz_avg, core_count }`.
+pub const TELEM_CPU: &str = "ybos/telemetry/cpu";
 
-/// Telemetrie memorie — JSON MemoryStats.
-pub const TELEM_MEM: &str = "remus/telemetry/mem";
+/// Memory telemetry JSON MemoryStats.
+pub const TELEM_MEM: &str = "ybos/telemetry/mem";
 
-/// Telemetrie baterii — JSON array de BatteryStats.
-pub const TELEM_BATTERY: &str = "remus/telemetry/battery";
+/// Battery telemetry JSON array of BatteryStats.
+pub const TELEM_BATTERY: &str = "ybos/telemetry/battery";
 
-/// Telemetrie zone termice — JSON array de ThermalZone.
-pub const TELEM_THERMAL: &str = "remus/telemetry/thermal";
+/// Thermal telemetry JSON array of ThermalZone.
+pub const TELEM_THERMAL: &str = "ybos/telemetry/thermal";
 
-/// Telemetrie backlight — JSON BacklightStats (sau lipsa).
-pub const TELEM_BACKLIGHT: &str = "remus/telemetry/backlight";
+/// Backlight telemetry JSON BacklightStats.
+pub const TELEM_BACKLIGHT: &str = "ybos/telemetry/backlight";
 
-/// Snapshot complet — JSON TelemetrySnapshot.
-pub const TELEM_FULL: &str = "remus/telemetry/full";
+/// Full JSON TelemetrySnapshot.
+pub const TELEM_FULL: &str = "ybos/telemetry/full";
 
-#[allow(dead_code)] // consumat in Faza 7 (udev attach/detach events)
-pub const HW_EVENT: &str = "remus/hw/event";
+#[allow(dead_code)]
+pub const HW_EVENT: &str = "ybos/hw/event";

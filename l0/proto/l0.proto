@@ -1,9 +1,9 @@
 syntax = "proto3";
 
-// Remus L0 gRPC interface — implementare in S6.4.
-// Acest fisier defineste contractul intre L0 (Rust daemon) si L1 (Python).
+// YBOS L0 gRPC interface.
+// Acest fisier defineste contractul intre L0 (Rust daemon) si L1.
 
-package remus.l0.v1;
+package ybos.l0.v1;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Identity
@@ -18,13 +18,11 @@ service IdentityService {
 message GetIdentityRequest {}
 
 message Identity {
-  string remus_id     = 1;
-  string device_id    = 2;
-  string device_role  = 3;  // primary | satellite | live
-  string creator      = 4;
-  string nucleus      = 5;  // textul nucleului identitar
-  uint64 generated_at = 6;  // unix ts
-  uint32 version      = 7;
+  string name                         = 1;
+  string uuid                         = 2;
+  bytes  biometric_template_public    = 3;
+  uint64 created_at                   = 4;  // unix ts
+  uint32 version                      = 5;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

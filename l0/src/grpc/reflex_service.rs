@@ -28,10 +28,10 @@ impl ReflexService for ReflexSvc {
             Some(Action::Suspend(_)) => "suspend",
             None => "<empty>",
         };
-        info!("[L0/grpc] ReflexService.RequestAction({}) — S6.4 stub", name);
+        info!("[L0/grpc] ReflexService.RequestAction({}) - Y1 stub", name);
         Ok(Response::new(ActionResponse {
             ok: false,
-            error: format!("reflex action '{}' not implemented (S6.5)", name),
+            error: format!("reflex action '{}' not implemented in Y1", name),
         }))
     }
 }

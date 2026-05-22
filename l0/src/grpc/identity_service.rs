@@ -1,9 +1,8 @@
 //! `IdentityService.GetIdentity` — citeste identitatea verificata cache-uita
 //! de `identity::boot_check()` la pornire.
 //!
-//! Daca boot-ul a rulat in mod UNVERIFIED (identity_core.bin lipsa la prima
-//! rulare), returnam `Status::failed_precondition`. L1 trebuie sa ruleze
-//! `python tools/identity_gen.py` si sa reporneasca daemonul.
+//! Daca identity-ul nu a fost deblocat prin envelope A/B/C, returnam
+//! `Status::failed_precondition`.
 
 use tonic::{Request, Response, Status};
 use tracing::debug;
@@ -25,18 +24,15 @@ impl IdentityService for IdentitySvc {
 
         let verified = identity::current_identity().ok_or_else(|| {
             Status::failed_precondition(
-                "identitate ne-verificata — identity_core.bin lipsa sau invalida. \
-                 Ruleaza: python tools/identity_gen.py",
+                "identity is sealed or missing; run onboarding or unlock an envelope",
             )
         })?;
 
         let resp = Identity {
-            remus_id: verified.payload.remus_id,
-            device_id: verified.payload.device_id,
-            device_role: verified.payload.device_role,
-            creator: verified.payload.creator,
-            nucleus: verified.payload.nucleus,
-            generated_at: verified.payload.generated_at as u64,
+            name: verified.identity.name,
+            uuid: verified.identity.uuid.to_string(),
+            biometric_template_public: verified.identity.biometric_template_public,
+            created_at: verified.identity.created_at,
             version: verified.header_version,
         };
         Ok(Response::new(resp))

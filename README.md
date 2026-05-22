@@ -26,7 +26,7 @@ Vezi `docs/ROADMAP.md`. Detaliu pentru Y1 (next), restul fazelor headline-only.
 - `docs/HARDWARE.md` — device test specs (flexibile)
 - `docs/L0_SACRED.md` — protocol securitate L0
 - `docs/ROADMAP.md` — faze (Y1 detaliat, restul TBD)
-- `l0/` — Rust daemon kernel-adjacent (portat din [RemusOS3](https://github.com/PGC22/RemusOS3))
+- `l0/` — Rust daemon kernel-adjacent (portat din prototipul inițial)
 
 ## Licență
 

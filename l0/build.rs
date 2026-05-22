@@ -4,7 +4,7 @@
 //! Folosim binar vendat (`protoc-bin-vendored`) si exportam PROTOC env var.
 //!
 //! Rezultatul codegen este disponibil in cod via:
-//!     tonic::include_proto!("remus.l0.v1");
+//!     tonic::include_proto!("ybos.l0.v1");
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let protoc = protoc_bin_vendored::protoc_bin_path()?;

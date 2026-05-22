@@ -1,6 +1,6 @@
 # L0 SACRED — Protocol de securitate inviolabil
 
-> Versiune: 0.1 (portat din RemusOS3 `docs/L0_SACRED.md`, adaptat pentru YBOS multi-user)
+> Versiune: 0.2 (adaptat pentru YBOS multi-user)
 > Data: 2026-05-21
 
 ---
@@ -26,18 +26,18 @@ const L0_SACRED: &[&str] = &[
     "l0/src/identity/mod.rs",
     "l0/src/main.rs",
 
-    // Identity blob per-user (generat la onboarding)
-    "config/identity_core.bin",      // nucleul identitar semnat HMAC
-    "config/identity_core.salt",     // salt pentru Argon2id envelope A
-    "config/bip39.lock",             // marker că paper backup a fost afișat (NU mnemonic-ul!)
+    // Identity blob per-user (generat la onboarding sub ${YBOS_DATA}/identity)
+    "identity/identity_core.bin",      // nucleul identitar semnat HMAC
+    "identity/identity_core.salt",     // salt pentru Argon2id envelope A
+    "identity/bip39.lock",             // marker că paper backup a fost afișat (NU mnemonic-ul!)
 
     // Cheia master K wrapped (envelope sealed pe TEE)
-    "config/k_envelope_a.bin",       // Argon2id-wrapped K
-    "config/k_envelope_b.bin",       // TEE-sealed K (pe StrongBox / Hexagon)
-    "config/k_envelope_c.bin",       // YubiKey-wrapped K (opt)
+    "identity/k_envelope_a.bin",       // Argon2id-wrapped K
+    "identity/k_envelope_b.bin",       // TEE-sealed K (platform TEE)
+    "identity/k_envelope_c.bin",       // hardware-key wrapped K (opt)
 
     // Boot integrity manifest
-    "config/l0_sacred.hashes.json",  // hashes ale L0 sacred files, verificate la boot
+    "identity/l0_sacred.hashes.json",  // hashes ale L0 sacred files, verificate la boot
 ];
 ```
 
@@ -66,7 +66,7 @@ fn apply_proposed_change(path: &Path, new_content: &[u8]) -> Result<()> {
 ```
 
 ### La boot
-1. Citește `config/l0_sacred.hashes.json`
+1. Citește `${YBOS_DATA}/identity/l0_sacred.hashes.json`
 2. Re-hash fiecare L0 SACRED file actual
 3. Compară cu manifesta
 4. Mismatch → boot blocat cu alertă la user
@@ -76,11 +76,11 @@ fn apply_proposed_change(path: &Path, new_content: &[u8]) -> Result<()> {
 
 ## Protecție Layer 2: file system
 
-### Pe Linux dev (RemusOS3 a folosit `chattr +i`)
+### Pe Linux dev
 ```bash
-sudo chattr +i config/identity_core.bin
-sudo chmod 0400 config/identity_core.bin
-sudo chown root:root config/identity_core.bin
+sudo chattr +i ${YBOS_DATA}/identity/identity_core.bin
+sudo chmod 0400 ${YBOS_DATA}/identity/identity_core.bin
+sudo chown root:root ${YBOS_DATA}/identity/identity_core.bin
 ```
 
 ### Pe Android (YBOS production)
@@ -98,10 +98,10 @@ Utilizatorul, manual:
 1. Boot device în recovery mode (volume_down + power la Pixel)
 2. `adb shell` ca root
 3. `setenforce 0` (dezactivare SELinux temporar)
-4. `chattr -i config/identity_core.bin`
+4. `chattr -i ${YBOS_DATA}/identity/identity_core.bin`
 5. Modificare manuală
-6. **Re-generare hash manifest** (`tools/regen_sacred_hashes.sh`)
-7. `chattr +i config/identity_core.bin`
+6. **Re-generare hash manifest** (tooling TBD)
+7. `chattr +i ${YBOS_DATA}/identity/identity_core.bin`
 8. `setenforce 1`
 9. Reboot
 
@@ -150,20 +150,20 @@ Pe boot failure: device boot stops, alert pe UI: *"Integritate L0 compromisă. C
 ## Audit recommendations
 
 - L0_SACRED list **trebuie review-uită** când se adaugă fișier nou în identity-critical path
-- Orice PR care atinge `l0/src/identity/*` are CODEOWNERS = George + Claude review obligatoriu
+- Orice PR care atinge `l0/src/identity/*` cere review de arhitectură și securitate
 - Penetration testing periodic (post-MVP): încearcă să modifici L0 SACRED prin: OTA update simulat, agent malițios, escaladare privilege
 
 ---
 
-## Diferențe față de Remus (pentru istoric)
+## Diferențe față de prototipul inițial
 
-| Aspect | Remus (RemusOS3) | YBOS |
+| Aspect | Prototip inițial | YBOS |
 |---|---|---|
-| Owner | Hardcoded George | Per-user enrollment la onboarding |
-| Storage protection | `chattr +i` pe Linux/NixOS | SELinux + fs-verity pe Android |
-| Tripwire | Python `core/paths.py is_l0_sacred()` | Rust `l0/src/identity/sacred.rs` |
-| YubiKey | Mandatoriu envelope C | Opt-in (NFC sau USB-C) |
-| TPM | Discrete TPM pe T460 | StrongBox (Pixel) / Hexagon TEE (Snapdragon) |
-| Recovery | Bootabil din Live USB | Recovery mode Android (adb root) |
+| Owner | Identitate fixă | Per-user enrollment la onboarding |
+| Storage protection | `chattr +i` pe Linux | SELinux + fs-verity pe Android |
+| Tripwire | Python | Rust `l0/src/identity/sacred.rs` |
+| Hardware key | Mandatoriu | Opt-in (NFC sau USB-C) |
+| TEE | TPM discret | TEE mobil prin HAL/platform APIs |
+| Recovery | Mediu live extern | Recovery mode Android |
 
 Conceptul rămâne identic. Implementarea se adaptează la platforma mobilă.

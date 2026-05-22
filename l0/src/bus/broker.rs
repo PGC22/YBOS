@@ -1,7 +1,7 @@
 //! Embedded MQTT broker (rumqttd).
 //!
 //! Bind doar pe `127.0.0.1:11883` — strict local. Auth + TLS vine in S6.x
-//! ulterior, cand permitem peer multi-body (alt device Remus pe LAN).
+//! ulterior, cand permitem peers locali.
 
 use anyhow::{Context, Result};
 use rumqttd::{Broker, Config};
@@ -26,7 +26,7 @@ initialized_filters = []
 shared_subscriptions_strategy = "roundrobin"
 
 [v4.1]
-name = "remus-l0"
+name = "ybos-l0"
 listen = "127.0.0.1:11883"
 next_connection_delay_ms = 1
 
@@ -46,7 +46,7 @@ pub fn spawn() -> Result<()> {
     // rumqttd 0.20 expune `start()` blocking. Il rulam intr-un thread OS
     // (NU intr-un task tokio, pentru ca blochează runtime-ul).
     std::thread::Builder::new()
-        .name("remus-l0-mqtt".into())
+        .name("ybos-l0-mqtt".into())
         .spawn(move || {
             info!("[L0/bus] MQTT broker listening on {}", BROKER_LISTEN);
             if let Err(e) = broker.start() {
