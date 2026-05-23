@@ -8,6 +8,7 @@ use ybos_inference::mock::MockInference;
 use ybos_inference::Inference;
 use ybos_memory::{MockVectorStore, MockEmbedder, VectorStore, Embedder};
 use ybos_user_context::{MockUserContextStore, UserContextStore};
+use ybos_calendar::{MockCalendarStore, CalendarStore};
 use ybos_orchestrator::http::{HyperHttpClient, HttpClient};
 
 #[tokio::main]
@@ -20,6 +21,7 @@ async fn main() -> Result<()> {
     let embedder: Arc<dyn Embedder> = Arc::new(MockEmbedder::new(384));
     let http: Arc<dyn HttpClient> = Arc::new(HyperHttpClient::new());
     let user_context: Arc<dyn UserContextStore> = Arc::new(MockUserContextStore::new());
+    let _calendar_store: Arc<dyn CalendarStore> = Arc::new(MockCalendarStore::new());
     let context = AgentContext { inference, memory, embedder, http, user_context };
 
     let registry = Arc::new(AgentRegistry::new());
