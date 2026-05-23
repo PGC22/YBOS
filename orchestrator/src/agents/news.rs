@@ -5,10 +5,11 @@ use serde_json::json;
 use std::time::{SystemTime, UNIX_EPOCH};
 use ybos_inference::CompleteRequest;
 use ybos_memory::{VectorItem, VectorQuery};
+use ybos_user_context::{ContextCategory, ContextQuery};
 
 use crate::agent::{Agent, AgentCall, AgentContext, AgentResponse};
 use crate::capability::{self, Operation};
-use crate::manifest::{Capabilities, Manifest, MemoryAccess};
+use crate::manifest::{AccessLevel, Capabilities, Manifest, MemoryAccess};
 use crate::news::rss;
 
 pub struct NewsAgent {
@@ -133,7 +134,33 @@ impl Agent for NewsAgent {
                     return Ok(AgentResponse::text("No news items found to summarize.".to_string()));
                 }
 
-                let mut prompt = "Summarize the following news items:\n\n".to_string();
+                // TODO Y9.b: NewsAgent manifest will gain data_user_prefs when UI surfaces preference seeding.
+                // Inline-check the manifest first so a missing capability is a silent skip rather than
+                // a polluting deny entry in ybos.audit (every summarize call would otherwise log a warn).
+                let mut user_profile_header = String::new();
+                let has_uc_read = matches!(
+                    self.manifest.capabilities.data_user_prefs,
+                    AccessLevel::Read | AccessLevel::ReadWrite
+                );
+                if has_uc_read {
+                    capability::enforce(&self.manifest, &Operation::UserContextRead)?;
+                    let prefs = ctx.user_context.query(ContextQuery {
+                        category: Some(ContextCategory::Preference),
+                        key_prefix: Some("news.".to_string()),
+                        limit: 5,
+                        ..Default::default()
+                    }).await.unwrap_or_default();
+
+                    if !prefs.is_empty() {
+                        user_profile_header.push_str("User profile:\n");
+                        for p in prefs {
+                            user_profile_header.push_str(&format!("- {}: {}\n", p.key, p.value));
+                        }
+                        user_profile_header.push_str("\n");
+                    }
+                }
+
+                let mut prompt = format!("{}Summarize the following news items:\n\n", user_profile_header);
                 for m in matches.iter().take(k) {
                     prompt.push_str(&format!("- {}\n", m.text));
                 }

@@ -3,6 +3,7 @@ use async_trait::async_trait;
 use std::sync::Arc;
 use ybos_inference::Inference;
 use ybos_memory::{VectorStore, Embedder};
+use ybos_user_context::UserContextStore;
 use crate::manifest::Manifest;
 use crate::http::HttpClient;
 
@@ -12,6 +13,7 @@ pub struct AgentContext {
     pub memory: Arc<dyn VectorStore>,
     pub embedder: Arc<dyn Embedder>,
     pub http: Arc<dyn HttpClient>,
+    pub user_context: Arc<dyn UserContextStore>,
 }
 
 #[derive(Debug, Clone)]

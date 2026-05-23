@@ -3,14 +3,17 @@ use async_trait::async_trait;
 use serde_json::json;
 use crate::agent::{Agent, AgentCall, AgentContext, AgentResponse};
 use crate::capability::{self, Operation};
-use crate::manifest::{Capabilities, Manifest, MemoryAccess};
+use crate::manifest::{AccessLevel, Capabilities, Manifest, MemoryAccess};
 use ybos_inference::CompleteRequest;
 use ybos_memory::{VectorItem, VectorQuery};
+use ybos_user_context::{ContextCategory, ContextEntry};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 pub struct HelloAgent {
     manifest: Manifest,
     use_llm: bool,
     text_to_remember: Option<String>,
+    use_user_context: bool,
 }
 
 impl HelloAgent {
@@ -23,6 +26,7 @@ impl HelloAgent {
             }),
             use_llm: false,
             text_to_remember: None,
+            use_user_context: false,
         }
     }
 
@@ -38,6 +42,7 @@ impl HelloAgent {
             },
             use_llm: true,
             text_to_remember: None,
+            use_user_context: false,
         }
     }
 
@@ -53,6 +58,23 @@ impl HelloAgent {
             },
             use_llm: false,
             text_to_remember: Some(text_to_remember.to_string()),
+            use_user_context: false,
+        }
+    }
+
+    pub fn new_with_user_context(name: &str) -> Self {
+        Self {
+            manifest: Manifest {
+                name: name.to_string(),
+                version: "0.1.0".to_string(),
+                capabilities: Capabilities {
+                    data_user_prefs: AccessLevel::ReadWrite,
+                    ..Default::default()
+                },
+            },
+            use_llm: false,
+            text_to_remember: None,
+            use_user_context: true,
         }
     }
 }
@@ -95,6 +117,37 @@ impl Agent for HelloAgent {
             Ok(AgentResponse::text(format!(
                 "hello from {}: remembered {}",
                 self.manifest.name, matched_text
+            )))
+        } else if self.use_user_context {
+            capability::enforce(&self.manifest, &Operation::UserContextWrite)?;
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+
+            ctx.user_context
+                .put(ContextEntry {
+                    id: uuid::Uuid::new_v4(),
+                    category: ContextCategory::Preference,
+                    key: "hello.last_invocation_at".to_string(),
+                    value: json!(now),
+                    note: Some("Tracked by HelloAgent".to_string()),
+                    confidence: 1.0,
+                    created_at: now,
+                    updated_at: now,
+                })
+                .await?;
+
+            capability::enforce(&self.manifest, &Operation::UserContextRead)?;
+            let entry = ctx
+                .user_context
+                .get(ContextCategory::Preference, "hello.last_invocation_at")
+                .await?
+                .ok_or_else(|| anyhow::anyhow!("Failed to retrieve user context after put"))?;
+
+            Ok(AgentResponse::text(format!(
+                "hello from {}: last invocation at {}",
+                self.manifest.name, entry.value
             )))
         } else if self.use_llm {
             capability::enforce(&self.manifest, &Operation::LlmCall)?;
