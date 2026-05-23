@@ -77,6 +77,12 @@ impl Agent for NewsAgent {
 
                     let resp = ctx.http.get(url).await?;
                     if resp.status != 200 {
+                        tracing::warn!(
+                            target: "ybos.news",
+                            url = %url,
+                            status = resp.status,
+                            "Non-200 response from RSS source, skipping"
+                        );
                         continue;
                     }
 

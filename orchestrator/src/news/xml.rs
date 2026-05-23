@@ -132,19 +132,11 @@ impl<'a> XmlLexer<'a> {
             }
             if self.starts_with("/>") {
                 self.pos += 2;
-                // For self-closing tags, we return a StartTag and will handle the implicit EndTag in the parser
-                // Actually, let's keep it simple for the lexer and just return the StartTag with a flag or handle it in parser.
-                // Spec says we should handle self-closing. Let's return StartTag for now.
-                // To support self-closing tags easily in a tree parser, we might want a special token or just return Start then End.
-                // Let's use a trick: return StartTag and later the parser will see it's self-closing.
-                // Actually, I'll add a boolean or just use a special name? No, let's just return it and let the parser decide.
-                // Wait, if I return StartTag and consume />. The parser won't know it was self-closing unless I tell it.
-                // Let's modify XmlToken::StartTag to include a self_closing field.
-                return Ok(XmlToken::StartTag { name, attrs: {
-                    let mut a = attrs;
-                    a.insert("__self_closing".to_string(), "true".to_string());
-                    a
-                }});
+                // Self-closing signaled via internal attribute consumed by parse().
+                // Refactor to StartTag { self_closing: bool } deferred to Y9.
+                let mut a = attrs;
+                a.insert("__self_closing".to_string(), "true".to_string());
+                return Ok(XmlToken::StartTag { name, attrs: a });
             }
 
             let attr_name = self.consume_name()?;
