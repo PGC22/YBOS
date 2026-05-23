@@ -14,6 +14,7 @@ use ybos_orchestrator::capability::{enforce, Operation};
 use ybos_orchestrator::manifest::{Manifest, MemoryAccess};
 use ybos_inference::mock::MockInference;
 use ybos_memory::{MockVectorStore, MockEmbedder};
+use ybos_user_context::MockUserContextStore;
 use ybos_l0::identity::session;
 use ybos_l0::identity::envelope::MasterKey;
 use ybos_l0::grpc::pb::session_service_server::SessionServiceServer;
@@ -77,7 +78,8 @@ net_domains = ["example.com"]
     let memory = Arc::new(MockVectorStore::new());
     let embedder = Arc::new(MockEmbedder::new(8));
     let http = Arc::new(MockHttpClient::new(vec![]));
-    let context = AgentContext { inference, memory, embedder, http };
+    let user_context = Arc::new(MockUserContextStore::new());
+    let context = AgentContext { inference, memory, embedder, http, user_context };
     let runtime = InProcessRuntime::new(registry.clone(), context);
     let handle = runtime.spawn(hello.manifest().clone()).await.expect("Failed to spawn hello agent");
     let resp = runtime.invoke(&handle, AgentCall {
@@ -108,7 +110,8 @@ async fn test_agent_with_llm_capability() {
     let memory = Arc::new(MockVectorStore::new());
     let embedder = Arc::new(MockEmbedder::new(8));
     let http = Arc::new(MockHttpClient::new(vec![]));
-    let context = AgentContext { inference, memory, embedder, http };
+    let user_context = Arc::new(MockUserContextStore::new());
+    let context = AgentContext { inference, memory, embedder, http, user_context };
     let runtime = InProcessRuntime::new(registry, context);
 
     let handle = runtime
@@ -165,7 +168,8 @@ async fn test_agent_with_memory_capability() {
     let memory = Arc::new(MockVectorStore::new());
     let embedder = Arc::new(MockEmbedder::new(8));
     let http = Arc::new(MockHttpClient::new(vec![]));
-    let context = AgentContext { inference, memory, embedder, http };
+    let user_context = Arc::new(MockUserContextStore::new());
+    let context = AgentContext { inference, memory, embedder, http, user_context };
     let runtime = InProcessRuntime::new(registry, context);
 
     let handle = runtime
@@ -227,4 +231,57 @@ async fn test_capability_denies_memory_without_declaration() {
     };
     enforce(&manifest_rw, &Operation::MemoryRead).expect("Should allow MemoryRead");
     enforce(&manifest_rw, &Operation::MemoryWrite).expect("Should allow MemoryWrite");
+}
+
+#[tokio::test]
+async fn test_agent_with_user_context_capability() {
+    let registry = Arc::new(AgentRegistry::new());
+    let hello_uc = Arc::new(HelloAgent::new_with_user_context("uc-hello"));
+    registry.register_static(hello_uc.clone());
+
+    let inference = Arc::new(MockInference::new(vec!["42".to_string()]));
+    let memory = Arc::new(MockVectorStore::new());
+    let embedder = Arc::new(MockEmbedder::new(8));
+    let http = Arc::new(MockHttpClient::new(vec![]));
+    let user_context = Arc::new(MockUserContextStore::new());
+    let context = AgentContext { inference, memory, embedder, http, user_context };
+    let runtime = InProcessRuntime::new(registry, context);
+
+    let handle = runtime
+        .spawn(hello_uc.manifest().clone())
+        .await
+        .expect("Failed to spawn uc-hello agent");
+
+    let resp = runtime
+        .invoke(
+            &handle,
+            AgentCall {
+                method: "test".to_string(),
+                payload: vec![],
+            },
+        )
+        .await
+        .expect("Failed to invoke uc-hello agent");
+
+    let response_text = String::from_utf8_lossy(&resp.payload);
+    assert!(response_text.contains("hello from uc-hello"));
+    assert!(response_text.contains("last invocation at"));
+}
+
+#[tokio::test]
+async fn test_capability_denies_user_context_without_declaration() {
+    // We need to capture audit logs here, but the CaptureLayer is in orchestrator/src/capability.rs
+    // and is not exported. However, we can still test that the operation returns an error.
+
+    let manifest = Manifest {
+        name: "test-agent".to_string(),
+        version: "0.1.0".to_string(),
+        capabilities: Default::default(), // data_user_prefs = None
+    };
+
+    let err_read = enforce(&manifest, &Operation::UserContextRead).unwrap_err();
+    assert!(err_read.to_string().contains("UserContextRead"));
+
+    let err_write = enforce(&manifest, &Operation::UserContextWrite).unwrap_err();
+    assert!(err_write.to_string().contains("UserContextWrite"));
 }

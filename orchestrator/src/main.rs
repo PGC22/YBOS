@@ -7,6 +7,7 @@ use ybos_orchestrator::runtime::InProcessRuntime;
 use ybos_inference::mock::MockInference;
 use ybos_inference::Inference;
 use ybos_memory::{MockVectorStore, MockEmbedder, VectorStore, Embedder};
+use ybos_user_context::{MockUserContextStore, UserContextStore};
 use ybos_orchestrator::http::{HyperHttpClient, HttpClient};
 
 #[tokio::main]
@@ -18,7 +19,8 @@ async fn main() -> Result<()> {
     let memory: Arc<dyn VectorStore> = Arc::new(MockVectorStore::new());
     let embedder: Arc<dyn Embedder> = Arc::new(MockEmbedder::new(384));
     let http: Arc<dyn HttpClient> = Arc::new(HyperHttpClient::new());
-    let context = AgentContext { inference, memory, embedder, http };
+    let user_context: Arc<dyn UserContextStore> = Arc::new(MockUserContextStore::new());
+    let context = AgentContext { inference, memory, embedder, http, user_context };
 
     let registry = Arc::new(AgentRegistry::new());
     let _runtime = InProcessRuntime::new(registry, context);

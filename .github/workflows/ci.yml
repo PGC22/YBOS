@@ -108,6 +108,17 @@ jobs:
         run: cargo test -p ybos-orchestrator --features real_rss,fastembed,sqlite_vec --test news_e2e -- --include-ignored
         timeout-minutes: 5
 
+  user_context_sqlite:
+    name: Build & Test user-context (sqlite)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Run user-context tests
+        run: cargo test -p ybos-user-context --features sqlite
+        timeout-minutes: 10
+
   shellcheck:
     name: ShellCheck
     runs-on: ubuntu-latest

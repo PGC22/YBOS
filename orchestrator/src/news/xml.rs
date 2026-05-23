@@ -17,7 +17,7 @@ pub enum XmlError {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum XmlToken {
-    StartTag { name: String, attrs: HashMap<String, String> },
+    StartTag { name: String, attrs: HashMap<String, String>, self_closing: bool },
     EndTag { name: String },
     Text(String),
     CData(String),
@@ -128,15 +128,11 @@ impl<'a> XmlLexer<'a> {
             self.consume_whitespace();
             if self.starts_with(">") {
                 self.pos += 1;
-                return Ok(XmlToken::StartTag { name, attrs });
+                return Ok(XmlToken::StartTag { name, attrs, self_closing: false });
             }
             if self.starts_with("/>") {
                 self.pos += 2;
-                // Self-closing signaled via internal attribute consumed by parse().
-                // Refactor to StartTag { self_closing: bool } deferred to Y9.
-                let mut a = attrs;
-                a.insert("__self_closing".to_string(), "true".to_string());
-                return Ok(XmlToken::StartTag { name, attrs: a });
+                return Ok(XmlToken::StartTag { name, attrs, self_closing: true });
             }
 
             let attr_name = self.consume_name()?;
@@ -273,8 +269,7 @@ pub fn parse(input: &str) -> Result<XmlNode, XmlError> {
 
     while let Some(token) = lexer.next_token()? {
         match token {
-            XmlToken::StartTag { name, mut attrs } => {
-                let self_closing = attrs.remove("__self_closing").is_some();
+            XmlToken::StartTag { name, attrs, self_closing } => {
                 let node = XmlNode::Element {
                     name,
                     attrs,

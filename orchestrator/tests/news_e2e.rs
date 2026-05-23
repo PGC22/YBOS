@@ -4,6 +4,7 @@ use ybos_orchestrator::agents::news::NewsAgent;
 use ybos_orchestrator::http::{HttpResponse, MockHttpClient};
 use ybos_inference::mock::MockInference;
 use ybos_memory::{MockVectorStore, MockEmbedder};
+use ybos_user_context::MockUserContextStore;
 
 #[tokio::test]
 async fn test_news_agent_mock_e2e() {
@@ -37,6 +38,7 @@ async fn test_news_agent_mock_e2e() {
         memory,
         embedder,
         http: mock_http,
+        user_context: Arc::new(MockUserContextStore::new()),
     };
 
     let agent = NewsAgent::new("news-agent", vec!["http://example.com/rss".to_string()]);
@@ -102,6 +104,7 @@ async fn test_news_agent_real_rss_smoke() {
         memory,
         embedder,
         http,
+        user_context: Arc::new(MockUserContextStore::new()),
     };
 
     let agent = NewsAgent::new("news-real", vec![source_url.to_string()]);
