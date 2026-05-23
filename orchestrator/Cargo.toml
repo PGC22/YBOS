@@ -20,8 +20,19 @@ uuid = { version = "1", features = ["v4", "serde"] }
 path-clean = "1.0.1"
 toml = "0.8"
 async-trait = "0.1"
+hyper = { version = "1", features = ["full"] }
+hyper-util = { version = "0.1", features = ["full"] }
+hyper-tls = "0.6"
+http-body-util = "0.1"
+bytes = "1"
+http = "1"
 ybos-inference = { path = "../inference" }
 ybos-memory = { workspace = true }
+
+[features]
+real_rss = []
+sqlite_vec = ["ybos-memory/sqlite_vec"]
+fastembed = ["ybos-memory/fastembed"]
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt", "test-util"] }

@@ -5,6 +5,8 @@ pub mod runtime;
 pub mod registry;
 pub mod l0_client;
 pub mod agents;
+pub mod http;
+pub mod news;
 
 pub mod pb {
     pub use ybos_proto::l0;

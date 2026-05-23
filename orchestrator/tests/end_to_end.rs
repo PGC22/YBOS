@@ -9,6 +9,7 @@ use ybos_orchestrator::registry::AgentRegistry;
 use ybos_orchestrator::runtime::{InProcessRuntime, AgentRuntime};
 use ybos_orchestrator::agent::{Agent, AgentCall, AgentContext};
 use ybos_orchestrator::agents::hello::HelloAgent;
+use ybos_orchestrator::http::MockHttpClient;
 use ybos_orchestrator::capability::{enforce, Operation};
 use ybos_orchestrator::manifest::{Manifest, MemoryAccess};
 use ybos_inference::mock::MockInference;
@@ -75,7 +76,8 @@ net_domains = ["example.com"]
     let inference: Arc<dyn ybos_inference::Inference> = Arc::new(MockInference::new(vec!["42".to_string()]));
     let memory = Arc::new(MockVectorStore::new());
     let embedder = Arc::new(MockEmbedder::new(8));
-    let context = AgentContext { inference, memory, embedder };
+    let http = Arc::new(MockHttpClient::new(vec![]));
+    let context = AgentContext { inference, memory, embedder, http };
     let runtime = InProcessRuntime::new(registry.clone(), context);
     let handle = runtime.spawn(hello.manifest().clone()).await.expect("Failed to spawn hello agent");
     let resp = runtime.invoke(&handle, AgentCall {
@@ -105,7 +107,8 @@ async fn test_agent_with_llm_capability() {
     let inference = Arc::new(MockInference::new(vec!["42".to_string()]));
     let memory = Arc::new(MockVectorStore::new());
     let embedder = Arc::new(MockEmbedder::new(8));
-    let context = AgentContext { inference, memory, embedder };
+    let http = Arc::new(MockHttpClient::new(vec![]));
+    let context = AgentContext { inference, memory, embedder, http };
     let runtime = InProcessRuntime::new(registry, context);
 
     let handle = runtime
@@ -161,7 +164,8 @@ async fn test_agent_with_memory_capability() {
     let inference = Arc::new(MockInference::new(vec!["42".to_string()]));
     let memory = Arc::new(MockVectorStore::new());
     let embedder = Arc::new(MockEmbedder::new(8));
-    let context = AgentContext { inference, memory, embedder };
+    let http = Arc::new(MockHttpClient::new(vec![]));
+    let context = AgentContext { inference, memory, embedder, http };
     let runtime = InProcessRuntime::new(registry, context);
 
     let handle = runtime

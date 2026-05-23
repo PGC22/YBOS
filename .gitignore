@@ -67,3 +67,7 @@ venv/
 .env.local
 out/
 target/test-models/
+
+# AI Model Caches
+.fastembed_cache/
+.llama_cache/

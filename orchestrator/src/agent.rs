@@ -4,12 +4,14 @@ use std::sync::Arc;
 use ybos_inference::Inference;
 use ybos_memory::{VectorStore, Embedder};
 use crate::manifest::Manifest;
+use crate::http::HttpClient;
 
 #[derive(Clone)]
 pub struct AgentContext {
     pub inference: Arc<dyn Inference>,
     pub memory: Arc<dyn VectorStore>,
     pub embedder: Arc<dyn Embedder>,
+    pub http: Arc<dyn HttpClient>,
 }
 
 #[derive(Debug, Clone)]
