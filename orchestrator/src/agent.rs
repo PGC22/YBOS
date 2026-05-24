@@ -33,6 +33,12 @@ impl AgentResponse {
             payload: s.into_bytes(),
         }
     }
+
+    pub fn json<T: serde::Serialize>(val: T) -> Self {
+        Self {
+            payload: serde_json::to_vec(&val).unwrap_or_default(),
+        }
+    }
 }
 
 #[async_trait]

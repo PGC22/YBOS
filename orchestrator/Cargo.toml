@@ -29,9 +29,11 @@ http = "1"
 ybos-inference = { path = "../inference" }
 ybos-memory = { workspace = true }
 ybos-user-context = { path = "../user-context" }
+ybos-calendar = { path = "../calendar" }
 
 [features]
 real_rss = []
+calendar_sqlite = ["ybos-calendar/sqlite"]
 sqlite_vec = ["ybos-memory/sqlite_vec"]
 fastembed = ["ybos-memory/fastembed"]
 user_context_sqlite = ["ybos-user-context/sqlite"]

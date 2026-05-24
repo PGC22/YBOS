@@ -1,0 +1,24 @@
+[package]
+name = "ybos-calendar"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+async-trait = "0.1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+uuid = { version = "1", features = ["v4", "serde"] }
+thiserror = "1"
+tokio = { workspace = true }
+tracing = { workspace = true }
+
+# Optional dependencies for sqlite feature
+rusqlite = { version = "0.32", features = ["bundled"], optional = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["full"] }
+tempfile = "3"
+
+[features]
+default = []
+sqlite = ["dep:rusqlite"]
