@@ -1,5 +1,5 @@
 [workspace]
-members = ["l0", "orchestrator", "inference", "proto", "memory", "user-context", "calendar"]
+members = ["l0", "orchestrator", "inference", "proto", "memory", "user-context", "calendar", "firewall"]
 resolver = "2"
 
 [workspace.dependencies]

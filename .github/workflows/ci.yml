@@ -130,6 +130,15 @@ jobs:
         run: cargo test -p ybos-calendar --features sqlite
         timeout-minutes: 10
 
+  firewall_judge:
+    name: Build & Test firewall (judge)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test -p ybos-firewall
+        timeout-minutes: 10
+
   shellcheck:
     name: ShellCheck
     runs-on: ubuntu-latest
