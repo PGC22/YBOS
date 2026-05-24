@@ -4,6 +4,7 @@ pub mod mock_judge;
 pub mod llm_judge;
 pub mod prompt;
 pub mod parse;
+mod audit;
 
 pub use types::*;
 pub use trait_def::*;

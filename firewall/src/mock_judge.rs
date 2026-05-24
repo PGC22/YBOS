@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use tracing::{info, warn};
+use crate::audit::log_audit_decision;
 use crate::trait_def::Judge;
 use crate::types::{JudgeContext, JudgeDecision, JudgeError};
 
@@ -30,59 +30,13 @@ impl Judge for MockJudge {
             }
         }
 
-        let agent = &context.agent_name;
-        let destination = &context.destination;
-        let policy = "mock";
-        let payload_bytes = payload.len();
-
-        match &decision {
-            JudgeDecision::Allow => {
-                info!(
-                    target: "ybos.audit.judge",
-                    agent,
-                    destination,
-                    policy,
-                    decision = "allow",
-                    payload_bytes,
-                    "Judge evaluation"
-                );
-            }
-            JudgeDecision::Redact { redacted_payload: _, reasons } => {
-                info!(
-                    target: "ybos.audit.judge",
-                    agent,
-                    destination,
-                    policy,
-                    decision = "redact",
-                    payload_bytes,
-                    redact_reasons_count = reasons.len(),
-                    "Judge evaluation"
-                );
-            }
-            JudgeDecision::AskUser { prompt: _ } => {
-                info!(
-                    target: "ybos.audit.judge",
-                    agent,
-                    destination,
-                    policy,
-                    decision = "ask_user",
-                    payload_bytes,
-                    "Judge evaluation"
-                );
-            }
-            JudgeDecision::Block { reason } => {
-                warn!(
-                    target: "ybos.audit.judge",
-                    agent,
-                    destination,
-                    policy,
-                    decision = "block",
-                    payload_bytes,
-                    reason = %reason,
-                    "Judge evaluation"
-                );
-            }
-        }
+        log_audit_decision(
+            &decision,
+            &context.agent_name,
+            &context.destination,
+            "mock",
+            payload.len(),
+        );
 
         Ok(decision)
     }
