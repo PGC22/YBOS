@@ -102,7 +102,7 @@ impl Agent for CalendarAgent {
                     updated_at: now,
                 };
                 self.store.put(event).await.map_err(|e| anyhow!("CalendarStore error: {}", e))?;
-                Ok(AgentResponse::json(json!({ "id": id })))
+                Ok(AgentResponse::json(json!({ "id": id }))?)
             }
             "list" => {
                 let p: ListPayload = serde_json::from_slice(&call.payload).unwrap_or(ListPayload {
@@ -118,7 +118,7 @@ impl Agent for CalendarAgent {
                     limit: p.limit.unwrap_or(0),
                 };
                 let events = self.store.list(q).await.map_err(|e| anyhow!("CalendarStore error: {}", e))?;
-                Ok(AgentResponse::json(json!(events)))
+                Ok(AgentResponse::json(json!(events))?)
             }
             "next" => {
                 let p: NextPayload = serde_json::from_slice(&call.payload).unwrap_or(NextPayload { within_secs: None });
@@ -131,9 +131,9 @@ impl Agent for CalendarAgent {
                 };
                 let events = self.store.list(q).await.map_err(|e| anyhow!("CalendarStore error: {}", e))?;
                 if let Some(event) = events.first() {
-                    Ok(AgentResponse::json(json!(event)))
+                    Ok(AgentResponse::json(json!(event))?)
                 } else {
-                    Ok(AgentResponse::json(json!({ "message": "No upcoming events" })))
+                    Ok(AgentResponse::json(json!({ "message": "No upcoming events" }))?)
                 }
             }
             "nl_query" => {
@@ -223,7 +223,7 @@ impl Agent for CalendarAgent {
                     }
                 }
 
-                Ok(AgentResponse::json(json!({ "due": due })))
+                Ok(AgentResponse::json(json!({ "due": due }))?)
             }
             _ => Err(anyhow!("Unknown method: {}", call.method)),
         }

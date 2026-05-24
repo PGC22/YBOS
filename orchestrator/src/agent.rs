@@ -34,10 +34,10 @@ impl AgentResponse {
         }
     }
 
-    pub fn json<T: serde::Serialize>(val: T) -> Self {
-        Self {
-            payload: serde_json::to_vec(&val).unwrap_or_default(),
-        }
+    pub fn json<T: serde::Serialize>(val: T) -> Result<Self, serde_json::Error> {
+        Ok(Self {
+            payload: serde_json::to_vec(&val)?,
+        })
     }
 }
 
