@@ -21,8 +21,8 @@ pub enum ContentType {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JudgeContext {
     pub agent_name: String,
-    pub destination: String,       // e.g. "<api.openai.com>" or
-                                   // "<api.anthropic.com>"
+    pub destination: String,       // e.g. "api.openai.com" or
+                                   // "api.anthropic.com"
     pub purpose: Option<String>,   // free-text rationale supplied by
                                    // the caller, surfaced in prompts
     pub content_type: ContentType,

@@ -45,13 +45,16 @@ pub fn parse_judge_output(text: &str) -> Result<JudgeDecision, JudgeError> {
     let mut balance = 0;
     let mut last_brace = None;
 
-    for (i, c) in text[first_brace..].char_indices() {
+    for (i, c) in text.char_indices() {
         if c == '{' {
             balance += 1;
         } else if c == '}' {
             balance -= 1;
-            if balance == 0 {
-                last_brace = Some(first_brace + i);
+            if balance < 0 {
+                return Err(JudgeError::Parse("Unbalanced braces (stray '}')".to_string()));
+            }
+            if balance == 0 && first_brace <= i {
+                last_brace = Some(i);
                 break;
             }
         }

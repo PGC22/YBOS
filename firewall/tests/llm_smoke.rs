@@ -92,3 +92,22 @@ async fn test_llm_parse_failure_fails_closed() {
         _ => panic!("Expected block on parse failure"),
     }
 }
+
+#[tokio::test]
+async fn test_llm_parse_stray_close_fails_closed() {
+    let mock_inference = Arc::new(MockInference::new(vec![
+        "junk } {\"decision\":\"allow\"}".into()
+    ]));
+    let judge = LlmJudge::new(mock_inference, JudgePolicy::Standard);
+    let context = JudgeContext {
+        agent_name: "test_agent".into(),
+        destination: "example.com".into(),
+        purpose: None,
+        content_type: ContentType::Text,
+    };
+    let decision = judge.evaluate(b"hello", context).await.unwrap();
+    match decision {
+        JudgeDecision::Block { reason } => assert!(reason.contains("unparseable")),
+        _ => panic!("Expected block on stray close brace"),
+    }
+}
