@@ -5,7 +5,6 @@ use serde_json::json;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
-use chrono::{DateTime, Utc};
 
 use ybos_calendar::{CalendarStore, Event, EventQuery, EventType};
 use ybos_inference::CompleteRequest;
@@ -153,16 +152,13 @@ impl Agent for CalendarAgent {
 
                 let mut events_text = String::new();
                 for e in events {
-                    let start_dt = DateTime::<Utc>::from_timestamp(e.start_ts as i64, 0).unwrap_or_default();
-                    let end_dt = DateTime::<Utc>::from_timestamp(e.end_ts as i64, 0).unwrap_or_default();
-                    events_text.push_str(&format!("- {}..{} | {:?} | {}\n",
-                        start_dt.to_rfc3339(), end_dt.to_rfc3339(), e.event_type, e.title));
+                    events_text.push_str(&format!("- start={} end={} type={:?} title={}\n",
+                        e.start_ts, e.end_ts, e.event_type, e.title));
                 }
 
-                let today_rfc = DateTime::<Utc>::from_timestamp(now as i64, 0).unwrap_or_default().to_rfc3339();
                 let prompt = format!(
-                    "Today's date: {}\nEvents:\n{}\nUser question: {}\nAnswer in one sentence.",
-                    today_rfc, events_text, p.question
+                    "Times below are unix epoch seconds (UTC).\nCurrent time: {}\nEvents:\n{}\nUser question: {}\nAnswer in one sentence.",
+                    now, events_text, p.question
                 );
 
                 let llm_res = ctx.inference.complete(CompleteRequest {
